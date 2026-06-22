@@ -3544,9 +3544,17 @@ async function analyzeAbsenceDoc() {
   document.getElementById('am-error').style.display = 'none';
   const { base64, mediaType } = _amFileData;
 
-  // Gemini API 키 (여기에 본인 키 입력)
+  // ★ Gemini API 키 (여기에 본인 키 입력)
   const GEMINI_API_KEY = 'AQ.Ab8RN6I6RPRGZnVRk0tRJBwf9WFvQdwYnOgpys9W3DB6QfNrFg';
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+  // 자동 시도할 모델 목록 (순서대로 시도)
+  const MODELS = [
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-pro'
+  ];
 
   const prompt = `당신은 학교 결보강 일지를 분석하는 전문가입니다.
 결보강 처리부 문서를 보고 각 행에서 보강/교체를 담당하는 선생님별로 전달 메시지를 만드세요.
@@ -3559,42 +3567,59 @@ async function analyzeAbsenceDoc() {
 형식: {"messages": [{"teacher": "이름", "text": "전달문구"}, ...]}
 이 결보강 처리부를 분석해서 선생님별 전달 문구를 JSON으로 만들어주세요.`;
 
-  // 이미지/PDF 파트 구성
-  const inlinePart = mediaType === 'application/pdf'
-    ? { inline_data: { mime_type: 'application/pdf', data: base64 } }
-    : { inline_data: { mime_type: mediaType, data: base64 } };
+  const inlinePart = { inline_data: { mime_type: mediaType, data: base64 } };
 
-  try {
-    const res = await fetch(GEMINI_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            inlinePart,
-            { text: prompt }
-          ]
-        }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 1000 }
-      })
-    });
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error('API 오류: ' + res.status + ' ' + (errData?.error?.message || ''));
+  const loadingEl = document.getElementById('am-loading');
+
+  // 모델 순서대로 시도
+  let lastError = '';
+  for (const model of MODELS) {
+    try {
+      loadingEl.innerHTML = `<div class="am-spinner"></div>AI 분석 중... (${model})`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [inlinePart, { text: prompt }] }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 1000 }
+        })
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        lastError = `${model} 실패 (${res.status}): ${errData?.error?.message || ''}`;
+        console.warn(lastError);
+        continue; // 다음 모델 시도
+      }
+      const data = await res.json();
+      const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      if (!raw) { lastError = `${model}: 응답 없음`; continue; }
+      let parsed;
+      try { parsed = JSON.parse(raw.replace(/```json|```/g,'').trim()); }
+      catch { lastError = `${model}: JSON 파싱 실패`; continue; }
+      const messages = parsed.messages || [];
+      if (messages.length === 0) { lastError = `${model}: 결보강 내용 없음`; continue; }
+      // ✅ 성공
+      renderAmMessages(messages, model);
+      document.getElementById('am-loading').style.display = 'none';
+      document.getElementById('am-analyze-btn').disabled = false;
+      return;
+    } catch (err) {
+      lastError = `${model} 오류: ${err.message}`;
+      console.warn(lastError);
+      continue;
     }
-    const data = await res.json();
-    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    let parsed;
-    try { parsed = JSON.parse(raw.replace(/```json|```/g,'').trim()); } catch { throw new Error('분석 결과를 파싱할 수 없습니다. 이미지가 선명한지 확인해주세요.'); }
-    const messages = parsed.messages || [];
-    if (messages.length === 0) throw new Error('결보강 내용을 찾을 수 없습니다. 더 선명한 이미지를 올려주세요.');
-    renderAmMessages(messages);
-  } catch (err) { showAmError(err.message || '분석 중 오류가 발생했습니다.'); }
-  finally { document.getElementById('am-loading').style.display = 'none'; document.getElementById('am-analyze-btn').disabled = false; }
+  }
+
+  // 모든 모델 실패
+  showAmError(`모든 모델 시도 실패. 마지막 오류: ${lastError}`);
+  document.getElementById('am-loading').style.display = 'none';
+  document.getElementById('am-analyze-btn').disabled = false;
 }
-function renderAmMessages(messages) {
+function renderAmMessages(messages, usedModel) {
   window._amMessages = messages;
-  document.getElementById('am-msg-list').innerHTML = messages.map((m,i) =>
+  const modelBadge = usedModel ? `<div style="font-size:10px;color:var(--text3);margin-bottom:8px">✅ ${usedModel} 로 분석 완료</div>` : '';
+  document.getElementById('am-msg-list').innerHTML = modelBadge + messages.map((m,i) =>
     `<div class="am-msg-item"><div class="am-msg-text"><span style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">→ <strong style="color:var(--accent)">${m.teacher}</strong> 선생님께</span>${m.text}</div><button class="am-copy-btn" id="am-copy-${i}" onclick="copyAmMsg(${i})">복사</button></div>`
   ).join('');
   document.getElementById('am-result-area').style.display = 'block';
