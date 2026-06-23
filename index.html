@@ -948,10 +948,16 @@
           <div id="stat-result-area" style="display:none;margin-top:12px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
               <div style="font-size:12px;font-weight:900;color:var(--green)">✅ 분석 완료 — 미리보기</div>
-              <button id="stat-download-btn" onclick="downloadStatExcel()"
-                style="padding:8px 20px;background:linear-gradient(135deg,#059669,#047857);border:none;border-radius:8px;color:white;font-family:'Noto Sans KR',sans-serif;font-size:13px;font-weight:700;cursor:pointer">
-                ⬇️ 엑셀 다운로드
-              </button>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button onclick="printStatDoc()"
+                  style="padding:8px 20px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;color:white;font-family:'Noto Sans KR',sans-serif;font-size:13px;font-weight:700;cursor:pointer">
+                  🖨️ 처리부 인쇄
+                </button>
+                <button id="stat-download-btn" onclick="downloadStatExcel()"
+                  style="padding:8px 20px;background:linear-gradient(135deg,#059669,#047857);border:none;border-radius:8px;color:white;font-family:'Noto Sans KR',sans-serif;font-size:13px;font-weight:700;cursor:pointer">
+                  ⬇️ 엑셀 다운로드
+                </button>
+              </div>
             </div>
             <div id="stat-preview" style="overflow-x:auto;border-radius:10px;border:1px solid var(--border)"></div>
           </div>
@@ -3610,18 +3616,9 @@ function resetStatUpload(){
   document.getElementById('stat-loading').style.display='none';
 }
 function _getGeminiKey(){
-  // analyzeAbsenceDoc 안의 키를 직접 하드코딩으로 가져옴
-  const src = analyzeAbsenceDoc.toString();
-  const patterns = [
-    /GEMINI_API_KEY\s*=\s*['"]([^'"]{10,})['"]/,
-    /key=([A-Za-z0-9_\-]{10,})/,
-  ];
-  for (const p of patterns) {
-    const m = src.match(p);
-    if (m && m[1] && !m[1].includes('YOUR_')) return m[1];
-  }
-  // 직접 키 입력 (위 방법 실패 시 여기에 입력)
-  return 'AQ.Ab8RN6I6RPRGZnVRk0tRJBwf9WFvQdwYnOgpys9W3DB6QfNrFg';
+  const src=analyzeAbsenceDoc.toString();
+  const m=src.match(/GEMINI_API_KEY\s*=\s*['"]([^'"]+)['"]/);
+  return m?m[1]:'';
 }
 async function analyzeStatDocs(){
   if(_statFiles.length===0){alert('파일을 먼저 추가해주세요.');return;}
@@ -3631,7 +3628,7 @@ async function analyzeStatDocs(){
   document.getElementById('stat-result-area').style.display='none';
   document.getElementById('stat-error').style.display='none';
 
-  const GEMINI_API_KEY=_getGeminiKey();
+  const GEMINI_API_KEY='AQ.Ab8RN6I6RPRGZnVRk0tRJBwf9WFvQdwYnOgpys9W3DB6QfNrFg';
   const MODELS=['gemini-2.5-flash','gemini-2.5-flash-lite','gemini-2.0-flash','gemini-1.5-flash'];
   const prompt=`당신은 학교 결보강 처리부를 분석하는 전문가입니다.
 이 문서에서 결보강 내역을 모두 추출해서 JSON으로 반환하세요.
@@ -3643,15 +3640,16 @@ ${monthVal?'기준 연월: '+monthVal:''}
 - class: 학년반 (예: 1-3)
 - subject: 결강과목 (예: 정보)
 - reason: 결강사유 (없으면 빈 문자열)
+- absent_teacher: 결강 교사 이름 (없으면 빈 문자열)
 - swap_date: 교체날짜 (교체인 경우만. 없으면 빈 문자열)
 - swap_period: 교체교시 (교체인 경우만. 없으면 빈 문자열)
 - swap_teacher: 교체교사 (교체인 경우만. 없으면 빈 문자열)
-- dept: 교과(군) (없으면 빈 문자열)
+- dept: 교과(군) (보강인 경우. 없으면 빈 문자열)
 - sub_teacher: 보강교사 (보강인 경우만. 없으면 빈 문자열)
 - type: "보강" 또는 "교체"
 
 빈 행 무시. 순수 JSON만. 마크다운 없이.
-형식: {"rows":[{"date":"6/3","period":"3","class":"1-3","subject":"정보","reason":"출장","swap_date":"","swap_period":"","swap_teacher":"","dept":"생활교양과","sub_teacher":"홍길동","type":"보강"},...]}`;
+형식: {"rows":[{"date":"6/3","period":"3","class":"1-3","subject":"정보","reason":"출장","absent_teacher":"김철수","swap_date":"","swap_period":"","swap_teacher":"","dept":"생활교양과","sub_teacher":"홍길동","type":"보강"},...]}`;
 
   _statRows=[];
   const loadingText=document.getElementById('stat-loading-text');
@@ -3697,52 +3695,240 @@ ${monthVal?'기준 연월: '+monthVal:''}
   renderStatPreview(monthVal);
 }
 
+// 학년반 변환: "1-3" → "1-3반" (엑셀 날짜 방지)
+const toClassLabel = c => {
+  if (!c) return '';
+  const s = String(c).trim();
+  const m = s.match(/^(\d+)[-–](\d+)$/);
+  if (m) return `${m[1]}-${m[2]}반`;
+  return s;
+};
+
 function renderStatPreview(monthVal){
   if(_statRows.length===0){showStatError('추출된 내역이 없습니다. 이미지가 선명한지 확인해주세요.');return;}
-  let html=`<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:600px">
-    <thead><tr style="background:var(--surface2)">
-      ${['#','날짜','교시','학년반','결강과목','결강사유','구분','교과(군)','보강/교체교사','교체날짜','교체교시']
-        .map(h=>`<th style="padding:7px 8px;border:1px solid var(--border);color:var(--text2);white-space:nowrap">${h}</th>`).join('')}
-    </tr></thead><tbody>
-    ${_statRows.map((r,i)=>`<tr style="${i%2===0?'':'background:rgba(255,255,255,0.02)'}">
-      <td style="padding:5px 8px;border:1px solid var(--border);color:var(--text3);text-align:center">${i+1}</td>
-      <td style="padding:5px 8px;border:1px solid var(--border);color:var(--text);white-space:nowrap">${r.date||''}</td>
-      <td style="padding:5px 8px;border:1px solid var(--border);text-align:center">${r.period||''}</td>
-      <td style="padding:5px 8px;border:1px solid var(--border)">${r.class||''}</td>
-      <td style="padding:5px 8px;border:1px solid var(--border);font-weight:700;color:var(--text)">${r.subject||''}</td>
-      <td style="padding:5px 8px;border:1px solid var(--border);color:var(--text2)">${r.reason||''}</td>
-      <td style="padding:5px 8px;border:1px solid var(--border);text-align:center">
-        <span style="padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700;${r.type==='보강'?'background:rgba(52,211,153,0.15);color:var(--green)':'background:rgba(251,191,36,0.15);color:var(--amber)'}">${r.type||''}</span>
-      </td>
-      <td style="padding:5px 8px;border:1px solid var(--border);color:var(--text2)">${r.dept||''}</td>
-      <td style="padding:5px 8px;border:1px solid var(--border);color:var(--accent);font-weight:700">${r.type==='보강'?(r.sub_teacher||''):(r.swap_teacher||'')}</td>
-      <td style="padding:5px 8px;border:1px solid var(--border);color:var(--text2)">${r.swap_date||''}</td>
-      <td style="padding:5px 8px;border:1px solid var(--border);text-align:center">${r.swap_period||''}</td>
-    </tr>`).join('')}
-    </tbody></table>`;
+  const TH = (txt, extra='') => `<th style="padding:6px 8px;border:1px solid var(--border);color:var(--text2);white-space:nowrap;text-align:center;background:var(--surface2);${extra}">${txt}</th>`;
+  const TD = (txt, extra='') => `<td style="padding:5px 8px;border:1px solid var(--border);text-align:center;${extra}">${txt||''}</td>`;
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:750px">
+    <thead>
+      <tr>
+        ${TH('순번','rowspan:2')}
+        ${TH('날짜','rowspan:2')}
+        ${TH('교시','rowspan:2')}
+        ${TH('학년반','rowspan:2')}
+        ${TH('결강과목','rowspan:2')}
+        ${TH('결강사유','rowspan:2')}
+        ${TH('교사','rowspan:2')}
+        ${TH('수업교체','colspan:3;border-bottom:none')}
+        ${TH('수업보강','colspan:2;border-bottom:none')}
+      </tr>
+      <tr>
+        ${TH('교체날짜')}${TH('교체교시')}${TH('교체교사')}
+        ${TH('교과(군)')}${TH('보강교사')}
+      </tr>
+    </thead>
+    <tbody>
+    ${_statRows.map((r,i)=>{
+      const cls = toClassLabel(r.class);
+      // absent_teacher: 결강 교사
+      const absentT = r.absent_teacher || r.teacher || '';
+      const isSwap = r.type === '교체';
+      const bg = i%2===0?'':'background:rgba(255,255,255,0.02)';
+      return `<tr style="${bg}">
+        ${TD(i+1,'color:var(--text3)')}
+        ${TD(r.date||'','white-space:nowrap')}
+        ${TD(r.period||'')}
+        ${TD(cls)}
+        ${TD(r.subject||'','font-weight:700;color:var(--text)')}
+        ${TD(r.reason||'','color:var(--text2)')}
+        ${TD(absentT,'color:var(--accent)')}
+        ${TD(isSwap?(r.swap_date||''):'')}
+        ${TD(isSwap?(r.swap_period||''):'')}
+        ${TD(isSwap?(r.swap_teacher||''):'')}
+        ${TD(!isSwap?(r.dept||''):'')}
+        ${TD(!isSwap?(r.sub_teacher||''):'')}
+      </tr>`;
+    }).join('')}
+    </tbody>
+  </table>`;
   document.getElementById('stat-preview').innerHTML=html;
   document.getElementById('stat-result-area').style.display='block';
+}
+
+function printStatDoc(){
+  if(_statRows.length===0)return;
+  const monthVal=document.getElementById('stat-month').value||'';
+  const [yr,mo] = monthVal ? monthVal.split('-') : ['2026',''];
+  const monthLabel = mo ? `${yr}학년도 ( ${parseInt(mo)} ) 월` : '2026학년도';
+
+  const toClass = c => {
+    if(!c) return '';
+    const s=String(c).trim();
+    const m=s.match(/^(\d+)[-–](\d+)$/);
+    return m?`${m[1]}-${m[2]}`:s;
+  };
+
+  // 25행씩 페이지 분할
+  const PAGE_SIZE = 25;
+  const pages = [];
+  for(let i=0;i<_statRows.length;i+=PAGE_SIZE){
+    pages.push(_statRows.slice(i,i+PAGE_SIZE));
+  }
+
+  const PRINT_STYLE = `
+@page { size: A3 landscape; margin: 10mm 8mm 8mm 8mm; }
+* { margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important; }
+body { font-family:'맑은 고딕','Malgun Gothic',sans-serif;color:#000;background:#fff;font-size:9pt; }
+.page { width:100%;margin-bottom:0; }
+.page + .page { page-break-before:always; }
+h1 { text-align:center;font-size:15pt;font-weight:900;letter-spacing:1px;margin-bottom:5mm; }
+.seal-area { display:flex;justify-content:flex-end;margin-bottom:4mm; }
+.seal-table { border-collapse:collapse; }
+.seal-table td { border:1px solid #aaa;width:18mm;height:14mm;text-align:center;font-size:9pt;font-weight:700;vertical-align:middle; }
+.seal-table .seal-label { height:7mm;background:#f5f5f5;border-bottom:1px solid #aaa; }
+.seal-table .seal-sign { height:7mm; }
+.main { border-collapse:collapse;width:100%;table-layout:fixed;font-size:8.5pt; }
+.main th,.main td { border:0.7px solid #aaa;text-align:center;vertical-align:middle;padding:2px 3px;overflow:hidden;word-break:keep-all; }
+.main .th-big { background:#d0d0d0;font-weight:900;font-size:9pt;vertical-align:middle; }
+.main .th-mid { background:#e0e0e0;font-weight:700;font-size:8.5pt;vertical-align:middle; }
+.main .th-small { background:#efefef;font-weight:700;font-size:8pt;vertical-align:middle; }
+.main td { height:9mm;font-size:8.5pt; }
+.main col.c-no { width:4%; }
+.main col.c-date { width:5.5%; }
+.main col.c-period { width:4%; }
+.main col.c-class { width:6%; }
+.main col.c-subj { width:13%; }
+.main col.c-reason { width:7%; }
+.main col.c-teacher { width:7%; }
+.main col.c-swdate { width:6%; }
+.main col.c-swperiod { width:5%; }
+.main col.c-swteacher { width:8%; }
+.main col.c-dept { width:9%; }
+.main col.c-subteacher { width:8%; }
+.print-btn { display:block;margin:4mm auto 0;padding:6px 20px;background:#1a73e8;color:#fff;border:none;border-radius:4px;font-size:11pt;cursor:pointer;font-weight:600; }
+@media print { .print-btn { display:none; } }
+`;
+
+  const makeTable = (rows, startNum) => `
+<table class="main">
+  <colgroup>
+    <col class="c-no"><col class="c-date"><col class="c-period"><col class="c-class">
+    <col class="c-subj"><col class="c-reason"><col class="c-teacher">
+    <col class="c-swdate"><col class="c-swperiod"><col class="c-swteacher">
+    <col class="c-dept"><col class="c-subteacher">
+  </colgroup>
+  <thead>
+    <tr>
+      <th class="th-big" colspan="7">결 강 내 용</th>
+      <th class="th-big" colspan="5">결 보 강 처 리 (수 업 교 체 &nbsp;/&nbsp; 보 강 중 택 1)</th>
+    </tr>
+    <tr>
+      <th class="th-mid" rowspan="2">순번</th>
+      <th class="th-mid" rowspan="2">날 짜</th>
+      <th class="th-mid" rowspan="2">교 시</th>
+      <th class="th-mid" rowspan="2">학년반</th>
+      <th class="th-mid" rowspan="2">결 강 과 목</th>
+      <th class="th-mid" rowspan="2">결 강 사 유</th>
+      <th class="th-mid" rowspan="2">교 사</th>
+      <th class="th-mid" colspan="3">수 업 교 체</th>
+      <th class="th-mid" colspan="2">수 업 보 강</th>
+    </tr>
+    <tr>
+      <th class="th-small">교체날짜</th>
+      <th class="th-small">교체교시</th>
+      <th class="th-small">교체교사</th>
+      <th class="th-small">교과(군)</th>
+      <th class="th-small">보강교사</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${rows.map((r,i)=>{
+      const num = startNum + i;
+      const cls = toClass(r.class);
+      const abT = r.absent_teacher || r.teacher || '';
+      const isSwap = r.type==='교체';
+      return `<tr>
+        <td>${num}</td>
+        <td>${r.date||''}</td>
+        <td>${r.period||''}</td>
+        <td>${cls}</td>
+        <td style="text-align:left;padding-left:4px">${r.subject||''}</td>
+        <td>${r.reason||''}</td>
+        <td>${abT}</td>
+        <td>${isSwap?(r.swap_date||''):''}</td>
+        <td>${isSwap?(r.swap_period||''):''}</td>
+        <td>${isSwap?(r.swap_teacher||''):''}</td>
+        <td>${!isSwap?(r.dept||''):''}</td>
+        <td>${!isSwap?(r.sub_teacher||''):''}</td>
+      </tr>`;
+    }).join('')}
+  </tbody>
+</table>`;
+
+  const pagesHtml = pages.map((rows, pi) => `
+<div class="page">
+  <h1>${monthLabel} 결보강 처리부(종합)</h1>
+  <div class="seal-area">
+    <table class="seal-table">
+      <tr>
+        <td class="seal-label">부장</td>
+        <td class="seal-label">교감</td>
+        <td class="seal-label">교장</td>
+      </tr>
+      <tr>
+        <td class="seal-sign"></td>
+        <td class="seal-sign"></td>
+        <td class="seal-sign"></td>
+      </tr>
+    </table>
+  </div>
+  ${makeTable(rows, pi*PAGE_SIZE+1)}
+</div>`).join('');
+
+  const win = window.open('','_blank','width=1400,height=900');
+  win.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
+<title>${monthLabel} 결보강 처리부</title>
+<style>${PRINT_STYLE}</style></head><body>
+${pagesHtml}
+<button class="print-btn" onclick="window.print()">🖨️ 인쇄하기</button>
+</body></html>`);
+  win.document.close();
 }
 
 function downloadStatExcel(){
   if(_statRows.length===0)return;
   const monthVal=document.getElementById('stat-month').value||'';
   const monthLabel=monthVal?monthVal.replace('-','년 ')+'월':'결보강통계';
-  const headers=['번호','날짜','교시','학년반','결강과목','결강사유','구분','교과(군)','보강/교체 교사','교체날짜','교체교시'];
-const toClassLabel = c => {
-    if (!c) return '';
-    // "1-3" → "1학년 3반", "2-1" → "2학년 1반"
-    const m = String(c).match(/^(\d+)[-–](\d+)$/);
-    if (m) return `${m[1]}학년 ${m[2]}반`;
-    return String(c);
-  };
-  const dataRows=_statRows.map((r,i)=>[
-    i+1, r.date||'', r.period||'', toClassLabel(r.class), r.subject||'', r.reason||'', r.type||'',
-    r.dept||'', r.type==='보강'?(r.sub_teacher||''):(r.swap_teacher||''), r.swap_date||'', r.swap_period||''
-  ]);
-  const titleRow=[`${monthLabel} 결보강 내역`,...Array(10).fill('')];
-  const emptyRow=Array(11).fill('');
-  const all=[titleRow,emptyRow,headers,...dataRows];
+
+  // 행 1: 제목 (12열)
+  const COLS = 12;
+  const titleRow  = [`${monthLabel} 결보강 내역`, ...Array(COLS-1).fill('')];
+  const emptyRow  = Array(COLS).fill('');
+  // 행 2: 대분류 헤더
+  const header1   = ['순번','날짜','교시','학년반','결강과목','결강사유','교사','수업교체','','','수업보강',''];
+  // 행 3: 소분류 헤더
+  const header2   = ['','','','','','','','교체날짜','교체교시','교체교사','교과(군)','보강교사'];
+
+  const dataRows = _statRows.map((r,i)=>{
+    const cls = toClassLabel(r.class);
+    const absentT = r.absent_teacher || r.teacher || '';
+    const isSwap = r.type === '교체';
+    return [
+      i+1,
+      r.date||'',
+      r.period||'',
+      cls,
+      r.subject||'',
+      r.reason||'',
+      absentT,
+      isSwap?(r.swap_date||''):'',
+      isSwap?(r.swap_period||''):'',
+      isSwap?(r.swap_teacher||''):'',
+      !isSwap?(r.dept||''):'',
+      !isSwap?(r.sub_teacher||''):''
+    ];
+  });
+
+  const all=[titleRow, emptyRow, header1, header2, ...dataRows];
   const csv=all.map(row=>row.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\r\n');
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
   const url=URL.createObjectURL(blob);
