@@ -4058,18 +4058,21 @@ async function analyzeAbsenceDoc() {
 4. 빈 행 무시. 순수 JSON만 반환. 마크다운 없이.
 형식: {"messages": [{"teacher": "이름", "text": "전달문구"}, ...]}`;
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST', headers: { 
-  'Content-Type': 'application/json',
-  'x-api-key': 'AQ.Ab8RN6I6RPRGZnVRk0tRJBwf9WFvQdwYnOgpys9W3DB6QfNrFg',
-  'anthropic-version': '2023-06-01'
-},
-      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1000, system: systemPrompt,
-        messages: [{ role: 'user', content: [contentBlock, { type: 'text', text: '결보강 처리부를 분석해서 선생님별 전달 문구를 JSON으로 만들어주세요.' }] }] })
-    });
-    if (!res.ok) throw new Error('API 오류: ' + res.status);
-    const data = await res.json();
-    const raw = data.content?.find(b => b.type === 'text')?.text || '';
+const GEMINI_API_KEY = 'AQ.Ab8RN6I6RPRGZnVRk0tRJBwf9WFvQdwYnOgpys9W3DB6QfNrFg';
+    const MODELS2 = ['gemini-2.5-flash','gemini-2.5-flash-lite','gemini-2.0-flash','gemini-1.5-flash'];
+    const inlinePart2 = { inline_data: { mime_type: mediaType, data: base64 } };
+    let raw = '';
+    for (const model of MODELS2) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [inlinePart2, { text: '결보강 처리부를 분석해서 선생님별 전달 문구를 JSON으로 만들어주세요.\n\n규칙:\n1. 날짜, 교시, 결강과목, 보강/교체 교사를 추출\n2. 날짜는 M/D(요일) 형식\n3. 메시지: "[날짜] [교시]교시 [결강과목] 보강 입니다." 형식\n4. 순수 JSON만 반환. 마크다운 없이.\n형식: {"messages": [{"teacher": "이름", "text": "전달문구"}]}' }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 2000 } }) });
+        if (!res.ok) continue;
+        const data = await res.json();
+        raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (raw) break;
+      } catch(e) { continue; }
+    }
     let parsed;
     try { parsed = JSON.parse(raw.replace(/```json|```/g,'').trim()); } catch { throw new Error('분석 결과를 파싱할 수 없습니다.'); }
     const messages = parsed.messages || [];
