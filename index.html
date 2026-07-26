@@ -1673,6 +1673,7 @@ function init() {
   if (absentDateEl) { absentDateEl.value = todayStr; syncDayFromDate('absent'); }
   if (swapDateEl)   { swapDateEl.value = todayStr;   syncDayFromDate('swap'); }
   renderDefaultGrid();
+   selfInitTeacherSelects();
 }
 
 function getTodayStr() {
@@ -4108,6 +4109,7 @@ function resetAmUpload() {
 }
 // ==================== 관리자 패널 (끝) ====================
  init();
+ selfInitTeacherSelects();
 </script>
 </body>
 </html>
