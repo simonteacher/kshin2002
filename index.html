@@ -1021,6 +1021,7 @@
   <button class="tab-btn" onclick="switchTab('swap')">🔄 교체 가능 교사 조회</button>
   <button class="tab-btn" onclick="switchTab('selflog')">✏️ 셀프 결보강 일지 작성</button>
   <button class="tab-btn" onclick="switchTab('rooms')">🏫 빈 교실 확인</button>  
+  <button class="tab-btn" onclick="switchTab('periods')">🧑‍🏫 교시별 교사 확인</button>
   <button class="tab-btn" onclick="switchTab('guide')">📖 사용자 가이드</button>
 </div>
 
@@ -1335,6 +1336,44 @@
   </div>
 
   <div id="room-result">
+    <div class="no-result">요일과 교시를 선택하여 조회하세요.</div>
+  </div>
+</div>
+<!-- TAB: 교시별 교사 확인 -->
+<div id="tab-periods" class="tab-panel">
+  <p class="panel-title">교시별 교사 확인</p>
+  <p class="panel-desc">요일과 교시를 선택하면 해당 시간에 수업 중인 모든 교사와 장소를 확인할 수 있습니다.</p>
+
+  <div class="controls-row">
+    <div class="ctrl-group">
+      <label>요일</label>
+      <select id="period-day">
+        <option value="">-- 요일 --</option>
+        <option value="월">월요일</option>
+        <option value="화">화요일</option>
+        <option value="수">수요일</option>
+        <option value="목">목요일</option>
+        <option value="금">금요일</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <label>교시</label>
+      <select id="period-period">
+        <option value="">-- 교시 --</option>
+        <option value="1">1교시</option>
+        <option value="2">2교시</option>
+        <option value="3">3교시</option>
+        <option value="4">4교시</option>
+        <option value="5">5교시</option>
+        <option value="6">6교시</option>
+        <option value="7">7교시</option>
+      </select>
+    </div>
+    <button class="find-btn" onclick="findTeachersByPeriod()">🔍 교사 조회</button>
+    <button class="find-btn" id="period-print-btn" style="background:linear-gradient(135deg,var(--green),#059669);display:none" onclick="printTeachersByPeriod()">🖨️ 인쇄</button>
+  </div>
+
+  <div id="period-result">
     <div class="no-result">요일과 교시를 선택하여 조회하세요.</div>
   </div>
 </div>
@@ -4214,6 +4253,106 @@ function findEmptyRooms() {
   html += `</div></div>`;
   resultEl.innerHTML = html;
 }
+// ==================== TAB: 교시별 교사 확인 ====================
+let _periodResultData = null; // 인쇄용 임시 저장
+
+function findTeachersByPeriod() {
+  const day = document.getElementById('period-day').value;
+  const period = document.getElementById('period-period').value;
+  const resultEl = document.getElementById('period-result');
+  const printBtn = document.getElementById('period-print-btn');
+
+  if (!day || !period) {
+    resultEl.innerHTML = '<div class="no-result" style="color:var(--red)">요일과 교시를 모두 선택해주세요.</div>';
+    printBtn.style.display = 'none';
+    _periodResultData = null;
+    return;
+  }
+
+  const rows = [];
+  for (const t of ALL_TEACHERS) {
+    const cell = SCHEDULE[t]?.[day]?.[period];
+    if (cell) {
+      rows.push({
+        teacher: t,
+        dept: TEACHER_DEPT[t] || '미지정',
+        subject: cell.subject,
+        room: cell.room
+      });
+    }
+  }
+  rows.sort((a, b) => a.dept.localeCompare(b.dept, 'ko') || a.teacher.localeCompare(b.teacher, 'ko'));
+
+  _periodResultData = { day, period, rows };
+  printBtn.style.display = rows.length > 0 ? 'inline-block' : 'none';
+
+  let html = `
+    <div class="schedule-grid-wrap">
+      <div class="grid-header">${day}요일 ${period}교시 — 수업 중인 교사 (${rows.length}명 / 전체 ${ALL_TEACHERS.length}명)</div>`;
+
+  if (rows.length === 0) {
+    html += `<div style="text-align:center;padding:30px;color:var(--text3)">해당 시간에 수업 중인 교사가 없습니다.</div>`;
+  } else {
+    html += `<div style="overflow-x:auto"><table class="schedule-table">
+      <thead><tr>
+        <th style="width:40px">#</th>
+        <th>교과군</th>
+        <th>교사명</th>
+        <th>과목</th>
+        <th>교실</th>
+      </tr></thead><tbody>
+      ${rows.map((r, i) => `
+        <tr>
+          <td class="day-label-cell">${i + 1}</td>
+          <td style="color:var(--text2)">${r.dept}</td>
+          <td class="cell-subj">${r.teacher}</td>
+          <td class="cell-subj">${toFullSubject(r.subject)}</td>
+          <td style="color:var(--amber);font-weight:700">${roomFullName(r.room)}</td>
+        </tr>`).join('')}
+      </tbody></table></div>`;
+  }
+  html += `</div>`;
+  resultEl.innerHTML = html;
+}
+
+function printTeachersByPeriod() {
+  if (!_periodResultData || _periodResultData.rows.length === 0) return;
+  const { day, period, rows } = _periodResultData;
+
+  const PRINT_STYLE = `
+@page { size: A4 portrait; margin: 15mm; }
+* { margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important; }
+body { font-family:'맑은 고딕','Malgun Gothic',sans-serif;color:#000;background:#fff; }
+h1 { text-align:center;font-size:16pt;font-weight:900;margin-bottom:10mm; }
+table { border-collapse:collapse;width:100%;font-size:11pt; }
+th,td { border:1px solid #999;padding:6px 8px;text-align:center; }
+th { background:#eee;font-weight:700; }
+.print-btn { display:block;margin:6mm auto 0;padding:6px 20px;background:#1a73e8;color:#fff;border:none;border-radius:4px;font-size:11pt;cursor:pointer; }
+@media print { .print-btn { display:none; } }
+`;
+
+  const rowsHtml = rows.map((r, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td>${r.dept}</td>
+      <td>${r.teacher}</td>
+      <td>${toFullSubject(r.subject)}</td>
+      <td>${roomFullName(r.room)}</td>
+    </tr>`).join('');
+
+  const win = window.open('', '_blank', 'width=900,height=1000');
+  win.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
+<title>${day}요일 ${period}교시 교사 현황</title>
+<style>${PRINT_STYLE}</style></head><body>
+<h1>${day}요일 ${period}교시 — 수업 중인 교사 현황 (총 ${rows.length}명)</h1>
+<table>
+  <thead><tr><th>#</th><th>교과군</th><th>교사명</th><th>과목</th><th>교실</th></tr></thead>
+  <tbody>${rowsHtml}</tbody>
+</table>
+<button class="print-btn" onclick="window.print()">🖨️ 인쇄하기</button>
+</body></html>`);
+  win.document.close();
+}ss
  init();
  selfInitTeacherSelects();
 </script>
