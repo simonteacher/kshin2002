@@ -1671,6 +1671,15 @@ function roomFullName(room) {
   }
   return result;
 }
+// 특별실 표시용 정규화: 컨홀/스룸/공동/모둠이 포함된 방은 전부 하나의 이름으로 병합
+function normalizeRoomDisplay(room) {
+  if (!room) return room;
+  const s = String(room);
+  for (const abbr of Object.keys(ROOM_ALIAS_MAP)) {
+    if (s.includes(abbr)) return ROOM_ALIAS_MAP[abbr];
+  }
+  return s; // 일반 교실(예: 201(PBL), 204)은 그대로 유지
+}
 // ==================== INIT ====================
 // 날짜 선택 → 요일 자동 계산
 function syncDayFromDate(prefix) {
@@ -4209,7 +4218,7 @@ function getAllRooms() {
     for (const d of DAYS) {
       for (const p of PERIODS) {
         const cell = SCHEDULE[t]?.[d]?.[p];
-        if (cell && cell.room) rooms.add(cell.room);
+        if (cell && cell.room) rooms.add(normalizeRoomDisplay(cell.room));
       }
     }
   }
@@ -4230,7 +4239,7 @@ function findEmptyRooms() {
   const occupied = new Set();
   for (const t of ALL_TEACHERS) {
     const cell = SCHEDULE[t]?.[day]?.[period];
-    if (cell && cell.room) occupied.add(cell.room);
+     if (cell && cell.room) occupied.add(normalizeRoomDisplay(cell.room));
   }
 
   const emptyRooms = allRooms.filter(r => !occupied.has(r));
@@ -4244,8 +4253,8 @@ function findEmptyRooms() {
     html += `<div style="text-align:center;padding:20px;color:var(--text3)">빈 교실이 없습니다.</div>`;
   } else {
     html += `<div style="display:flex;flex-wrap:wrap;gap:10px">`;
-    emptyRooms.forEach(r => {
-      html += `<div style="background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.3);border-radius:8px;padding:10px 16px;font-weight:700;color:var(--green);font-size:14px">${roomFullName(r)}</div>`;
+    emptyRooms.forEach(r => {                                    // ★ 이 줄 추가
+      html += `<div style="background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.3);border-radius:8px;padding:10px 16px;font-weight:700;color:var(--green);font-size:14px">${r}</div>`;
     });
     html += `</div>`;
   }
@@ -4352,7 +4361,7 @@ th { background:#eee;font-weight:700; }
 <button class="print-btn" onclick="window.print()">🖨️ 인쇄하기</button>
 </body></html>`);
   win.document.close();
-}ss
+}
  init();
  selfInitTeacherSelects();
 </script>
