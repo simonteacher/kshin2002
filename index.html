@@ -1020,6 +1020,7 @@
   <button class="tab-btn active" onclick="switchTab('absence')">📋 결보강 확인</button>
   <button class="tab-btn" onclick="switchTab('swap')">🔄 교체 가능 교사 조회</button>
   <button class="tab-btn" onclick="switchTab('selflog')">✏️ 셀프 결보강 일지 작성</button>
+  <button class="tab-btn" onclick="switchTab('rooms')">🏫 빈 교실 확인</button>  
   <button class="tab-btn" onclick="switchTab('guide')">📖 사용자 가이드</button>
 </div>
 
@@ -1298,7 +1299,45 @@
     </div>
   </div>
 </div>
+
 <!-- ===== TAB: 셀프 결보강 일지 (끝) ===== -->
+<!-- TAB: 빈 교실 확인 -->
+<div id="tab-rooms" class="tab-panel">
+  <p class="panel-title">빈 교실 확인</p>
+  <p class="panel-desc">요일과 교시를 선택하면 해당 시간에 비어있는 교실 목록을 확인할 수 있습니다.</p>
+
+  <div class="controls-row">
+    <div class="ctrl-group">
+      <label>요일</label>
+      <select id="room-day">
+        <option value="">-- 요일 --</option>
+        <option value="월">월요일</option>
+        <option value="화">화요일</option>
+        <option value="수">수요일</option>
+        <option value="목">목요일</option>
+        <option value="금">금요일</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <label>교시</label>
+      <select id="room-period">
+        <option value="">-- 교시 --</option>
+        <option value="1">1교시</option>
+        <option value="2">2교시</option>
+        <option value="3">3교시</option>
+        <option value="4">4교시</option>
+        <option value="5">5교시</option>
+        <option value="6">6교시</option>
+        <option value="7">7교시</option>
+      </select>
+    </div>
+    <button class="find-btn" onclick="findEmptyRooms()">🔍 빈 교실 찾기</button>
+  </div>
+
+  <div id="room-result">
+    <div class="no-result">요일과 교시를 선택하여 조회하세요.</div>
+  </div>
+</div>
 <div id="tab-guide" class="tab-panel">
 <div style="max-width:800px;margin:0 auto;padding:16px 0 48px;">
 
@@ -1577,6 +1616,21 @@ function toFullSubject(subj) {
     if (subj.startsWith(k)) return SUBJECT_MAP[k] + subj.slice(k.length);
   }
   return subj;
+}
+// ==================== 교실 별칭 풀네임 매핑 ====================
+const ROOM_ALIAS_MAP = {
+  "컨홀": "컨퍼런스홀",
+  "스룸": "스터디룸",
+  "공동": "공동교육과정실",
+  "모둠": "모둠학습실"
+};
+function roomFullName(room) {
+  if (!room) return room;
+  let result = String(room);
+  for (const [abbr, full] of Object.entries(ROOM_ALIAS_MAP)) {
+    result = result.split(abbr).join(full);
+  }
+  return result;
 }
 // ==================== INIT ====================
 // 날짜 선택 → 요일 자동 계산
@@ -4109,6 +4163,57 @@ function resetAmUpload() {
   const btn=document.getElementById('am-analyze-btn'); if(btn) btn.disabled=false;
 }
 // ==================== 관리자 패널 (끝) ====================
+// ==================== TAB: 빈 교실 확인 ====================
+function getAllRooms() {
+  const rooms = new Set();
+  for (const t of ALL_TEACHERS) {
+    for (const d of DAYS) {
+      for (const p of PERIODS) {
+        const cell = SCHEDULE[t]?.[d]?.[p];
+        if (cell && cell.room) rooms.add(cell.room);
+      }
+    }
+  }
+  return Array.from(rooms).sort((a, b) => a.localeCompare(b, 'ko'));
+}
+
+function findEmptyRooms() {
+  const day = document.getElementById('room-day').value;
+  const period = document.getElementById('room-period').value;
+  const resultEl = document.getElementById('room-result');
+
+  if (!day || !period) {
+    resultEl.innerHTML = '<div class="no-result" style="color:var(--red)">요일과 교시를 모두 선택해주세요.</div>';
+    return;
+  }
+
+  const allRooms = getAllRooms();
+  const occupied = new Set();
+  for (const t of ALL_TEACHERS) {
+    const cell = SCHEDULE[t]?.[day]?.[period];
+    if (cell && cell.room) occupied.add(cell.room);
+  }
+
+  const emptyRooms = allRooms.filter(r => !occupied.has(r));
+
+  let html = `
+    <div class="schedule-grid-wrap">
+      <div class="grid-header">${day}요일 ${period}교시 — 빈 교실 (${emptyRooms.length}개 / 전체 ${allRooms.length}개)</div>
+      <div style="padding:20px">`;
+
+  if (emptyRooms.length === 0) {
+    html += `<div style="text-align:center;padding:20px;color:var(--text3)">빈 교실이 없습니다.</div>`;
+  } else {
+    html += `<div style="display:flex;flex-wrap:wrap;gap:10px">`;
+    emptyRooms.forEach(r => {
+      html += `<div style="background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.3);border-radius:8px;padding:10px 16px;font-weight:700;color:var(--green);font-size:14px">${roomFullName(r)}</div>`;
+    });
+    html += `</div>`;
+  }
+
+  html += `</div></div>`;
+  resultEl.innerHTML = html;
+}
  init();
  selfInitTeacherSelects();
 </script>
