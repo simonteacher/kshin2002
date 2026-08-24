@@ -4291,8 +4291,19 @@ function findTeachersByPeriod() {
       });
     }
   }
-  rows.sort((a, b) => a.dept.localeCompare(b.dept, 'ko') || a.teacher.localeCompare(b.teacher, 'ko'));
-
+// 교실 정렬 우선순위: 숫자 교실은 숫자 오름차순, 특별실(PBL·컨퍼런스홀 등 문자 포함 방)은 맨 뒤로
+function roomSortKey(room) {
+  const s = String(room || '');
+  const numMatch = s.match(/^(\d+)/);
+  if (numMatch) return [0, parseInt(numMatch[1], 10), s];
+  return [1, 0, s];
+}
+rows.sort((a, b) => {
+  const ka = roomSortKey(a.room), kb = roomSortKey(b.room);
+  if (ka[0] !== kb[0]) return ka[0] - kb[0];
+  if (ka[1] !== kb[1]) return ka[1] - kb[1];
+  return ka[2].localeCompare(kb[2], 'ko');
+});
   _periodResultData = { day, period, rows };
   printBtn.style.display = rows.length > 0 ? 'inline-block' : 'none';
 
