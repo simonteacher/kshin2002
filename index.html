@@ -1020,7 +1020,8 @@
   <button class="tab-btn active" onclick="switchTab('absence')">📋 결보강 확인</button>
   <button class="tab-btn" onclick="switchTab('swap')">🔄 교체 가능 교사 조회</button>
   <button class="tab-btn" onclick="switchTab('selflog')">✏️ 셀프 결보강 일지 작성</button>
-  <button class="tab-btn" onclick="switchTab('rooms')">🏫 빈 교실 확인</button>  
+  <button class="tab-btn" onclick="switchTab('rooms')">🏫 빈 교실 확인</button>
+  <button class="tab-btn" onclick="switchTab('deptmeeting')">🗓️ 부장 공통 공강</button> 
   <button class="tab-btn" onclick="switchTab('periods')">🧑‍🏫 교시별 교사 확인</button>
   <button class="tab-btn" onclick="switchTab('guide')">📖 사용자 가이드</button>
 </div>
@@ -1377,6 +1378,27 @@
     <div class="no-result">요일과 교시를 선택하여 조회하세요.</div>
   </div>
 </div>
+<!-- TAB: 부장 공통 공강 -->
+<div id="tab-deptmeeting" class="tab-panel">
+  <p class="panel-title">부장 공통 공강 시간 확인</p>
+  <p class="panel-desc">선택한 부장님 그룹 전원이 동시에 공강인 요일·교시를 찾아줍니다.</p>
+
+  <div class="controls-row">
+    <div class="ctrl-group">
+      <label>그룹 선택</label>
+      <select id="deptmeeting-group">
+        <option value="admin">행정부장 (1~8)</option>
+        <option value="grade">학년부장 (9~11)</option>
+        <option value="all">전체 부장 (1~11)</option>
+      </select>
+    </div>
+    <button class="find-btn" onclick="findDeptCommonFree()">🔍 공통 공강 찾기</button>
+  </div>
+
+  <div id="deptmeeting-result">
+    <div class="no-result">그룹을 선택하여 조회하세요.</div>
+  </div>
+</div>
 <div id="tab-guide" class="tab-panel">
 <div style="max-width:800px;margin:0 auto;padding:16px 0 48px;">
 
@@ -1630,6 +1652,38 @@ const TEACHER_DEPT = {};
 for (const [dept, teachers] of Object.entries(SUBJECT_GROUPS)) {
   for (const t of teachers) TEACHER_DEPT[t] = dept;
 }
+// ==================== 부장 그룹 데이터 ====================
+const DEPT_HEAD_GROUPS = {
+  admin: {
+    label: "행정부장 (1~8)",
+    members: [
+      { role: "교무부장", name: "김영권" },
+      { role: "교육연구부장", name: "김종철" },
+      { role: "학생생활안전부장", name: "김창현" },
+      { role: "교육과정부장", name: "김주현" },
+      { role: "미래교육기획부장", name: "정용희" },
+      { role: "융합혁신교육부장", name: "이승희" },
+      { role: "교육정보부장", name: "서호현" },
+      { role: "창의체험활동부장", name: "문지훈" }
+    ]
+  },
+  grade: {
+    label: "학년부장 (9~11)",
+    members: [
+      { role: "1학년 부장", name: "오혜주" },
+      { role: "2학년 부장", name: "김병욱" },
+      { role: "3학년 부장", name: "이보나" }
+    ]
+  },
+  all: {
+    label: "전체 부장 (1~11)",
+    members: [] // 아래에서 admin+grade 합쳐서 채움
+  }
+};
+DEPT_HEAD_GROUPS.all.members = [
+  ...DEPT_HEAD_GROUPS.admin.members,
+  ...DEPT_HEAD_GROUPS.grade.members
+];
 // ==================== 과목명 풀네임 매핑 ====================
 const SUBJECT_MAP = {
   "주탐독": "주제탐구독서", "화언": "화법과언어", "통사2": "통합사회2",
@@ -4373,6 +4427,52 @@ th { background:#eee;font-weight:700; }
 <button class="print-btn" onclick="window.print()">🖨️ 인쇄하기</button>
 </body></html>`);
   win.document.close();
+}
+// ==================== TAB: 부장 공통 공강 ====================
+function findDeptCommonFree() {
+  const groupKey = document.getElementById('deptmeeting-group').value;
+  const group = DEPT_HEAD_GROUPS[groupKey];
+  const resultEl = document.getElementById('deptmeeting-result');
+
+  if (!group || group.members.length === 0) {
+    resultEl.innerHTML = '<div class="no-result" style="color:var(--red)">그룹 정보를 찾을 수 없습니다.</div>';
+    return;
+  }
+
+  const commonSlots = [];
+  for (const day of DAYS) {
+    for (const period of PERIODS) {
+      const allFree = group.members.every(m => isFree(m.name, day, period));
+      if (allFree) commonSlots.push({ day, period });
+    }
+  }
+
+  const memberListHtml = group.members
+    .map(m => `<span style="display:inline-block;margin:2px 6px 2px 0;font-size:11px;color:var(--text2)">${m.role} <strong style="color:var(--text)">${m.name}</strong></span>`)
+    .join('');
+
+  let html = `
+    <div class="schedule-grid-wrap">
+      <div class="grid-header">${group.label} — 공통 공강 (${commonSlots.length}개 슬롯)</div>
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);background:var(--surface2)">
+        ${memberListHtml}
+      </div>
+      <div style="padding:20px">`;
+
+  if (commonSlots.length === 0) {
+    html += `<div style="text-align:center;padding:20px;color:var(--text3)">전원이 동시에 공강인 시간이 없습니다.</div>`;
+  } else {
+    const dayOrder = { '월':0, '화':1, '수':2, '목':3, '금':4 };
+    commonSlots.sort((a, b) => (dayOrder[a.day] - dayOrder[b.day]) || (parseInt(a.period) - parseInt(b.period)));
+    html += `<div style="display:flex;flex-wrap:wrap;gap:10px">`;
+    commonSlots.forEach(s => {
+      html += `<div style="background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.3);border-radius:8px;padding:10px 16px;font-weight:700;color:var(--green);font-size:14px">${s.day}요일 ${s.period}교시</div>`;
+    });
+    html += `</div>`;
+  }
+
+  html += `</div></div>`;
+  resultEl.innerHTML = html;
 }
  init();
  selfInitTeacherSelects();
