@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>광주경신여자고등학교 시간표 관리</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=Noto+Serif+KR:wght@400;700&display=swap');
-
+ @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=Noto+Serif+KR:wght@400;700&family=Gowun+Batang&family=Gaegu:wght@400;700&family=Jua&family=Do+Hyeon&family=Nanum+Myeongjo:wght@400;700;800&family=Black+Han+Sans&display=swap');
   :root {
     --bg: #0f1117;
     --surface: #1a1d27;
@@ -75,7 +74,7 @@
     background: transparent;
     color: var(--text2);
     font-family: 'Noto Sans KR', sans-serif;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 500;
     cursor: pointer;
     border-radius: 8px 8px 0 0;
@@ -831,6 +830,8 @@
   @keyframes spin { to { transform:rotate(360deg); } }
   #am-error { display:none;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--red);margin-top:10px; }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 
@@ -1021,6 +1022,7 @@
   <button class="tab-btn" onclick="switchTab('swap')">🔄 교체 가능 교사 조회</button>
   <button class="tab-btn" onclick="switchTab('selflog')">✏️ 셀프 결보강 일지 작성</button>
   <button class="tab-btn" onclick="switchTab('rooms')">🏫 빈 교실 확인</button>
+  <button class="tab-btn" onclick="switchTab('myschedule')">🖨️ 교사 시간표 출력</button>
   <button class="tab-btn" onclick="switchTab('deptmeeting')">🗓️ 부장 공통 공강</button> 
   <button class="tab-btn" onclick="switchTab('teachermeeting')">👥 교사별 공통 공강</button>
   <button class="tab-btn" onclick="switchTab('periods')">🧑‍🏫 교시별 교사 확인</button>
@@ -1334,13 +1336,71 @@
         <option value="7">7교시</option>
       </select>
     </div>
-    <button class="find-btn" onclick="findEmptyRooms()">🔍 빈 교실 찾기</button>
+       <button class="find-btn" onclick="findEmptyRooms()">🔍 빈 교실 찾기</button>
   </div>
 
   <div id="room-result">
     <div class="no-result">요일과 교시를 선택하여 조회하세요.</div>
   </div>
 </div>
+<!-- ★ 여기에 새 탭 패널 통째로 추가 -->
+<!-- TAB: 교사 시간표 출력 -->
+<div id="tab-myschedule" class="tab-panel">
+  <p class="panel-title">교사 시간표 출력</p>
+  <p class="panel-desc">교사를 선택하고 원하는 디자인 스타일로 시간표를 인쇄하거나 PDF/JPG로 다운로드할 수 있습니다.</p>
+
+  <div class="controls-row">
+    <div class="ctrl-group">
+      <label>교사 선택</label>
+      <select id="myschedule-teacher"><option value="">-- 교사 선택 --</option></select>
+    </div>
+    <div class="ctrl-group">
+      <label>디자인 스타일</label>
+      <select id="myschedule-style">
+        <option value="classic">클래식 (흑백 인쇄용)</option>
+        <option value="modern">모던 블루</option>
+        <option value="pastel">파스텔 컬러</option>
+        <option value="dark">다크 모드</option>
+        <option value="forest">포레스트 그린</option>
+        <option value="sunset">선셋 오렌지</option>
+        <option value="lavender">라벤더</option>
+        <option value="mono">미니멀 모노</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <label>글씨체</label>
+      <select id="myschedule-font">
+        <option value="sans">깔끔한 고딕 (Noto Sans)</option>
+        <option value="serif">단정한 명조 (Noto Serif)</option>
+        <option value="myeongjo">고급 명조 (Nanum Myeongjo)</option>
+        <option value="batang">손글씨 느낌 (Gowun Batang)</option>
+        <option value="gaegu">귀여운 손글씨 (Gaegu)</option>
+        <option value="jua">동글동글 (Jua)</option>
+        <option value="dohyeon">강렬한 고딕 (Do Hyeon)</option>
+        <option value="blackhan">임팩트 (Black Han Sans)</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <label>인쇄 시 한 장에</label>
+      <select id="myschedule-copies">
+        <option value="1">1칸 (한 장에 1개)</option>
+        <option value="2">2칸</option>
+        <option value="4">4칸</option>
+        <option value="6">6칸</option>
+      </select>
+    </div>
+    <button class="find-btn" onclick="renderMySchedule()">🔍 시간표 보기</button>
+  </div>
+
+  <div id="myschedule-actions" style="display:none;margin-bottom:16px;gap:10px">
+    <button class="find-btn" onclick="printMySchedule()">🖨️ 인쇄</button>
+    <button class="find-btn" style="background:linear-gradient(135deg,var(--red),#b91c1c)" onclick="downloadMyScheduleAs('pdf')">📄 PDF 다운로드</button>
+    <button class="find-btn" style="background:linear-gradient(135deg,var(--amber),#b45309)" onclick="downloadMyScheduleAs('jpg')">🖼️ JPG 다운로드</button>
+  </div>
+
+  <div id="myschedule-preview"></div>
+</div>
+<!-- TAB: 교시별 교사 확인 -->
 <!-- TAB: 교시별 교사 확인 -->
 <div id="tab-periods" class="tab-panel">
   <p class="panel-title">교시별 교사 확인</p>
@@ -1864,7 +1924,9 @@ function init() {
   renderDeptHeadCheckboxes();
   renderTeacherMeetingList();          
   renderTeacherMeetingSelectedChips(); 
-   selfInitTeacherSelects();
+  const myselEl = document.getElementById('myschedule-teacher');           
+  if (myselEl) ALL_TEACHERS.sort().forEach(t => myselEl.add(new Option(t, t)));  
+  selfInitTeacherSelects();
 }
 
 function getTodayStr() {
@@ -4658,6 +4720,143 @@ function findTeacherCommonFree() {
 
   html += `</div></div>`;
   resultEl.innerHTML = html;
+}
+// ★ 여기에 아래 블록 통째로 추가
+
+// ==================== TAB: 교사 시간표 출력 ====================
+const MYSCHEDULE_STYLES = {
+  classic: { bg:'#ffffff', text:'#111', header:'#f0f0f0', border:'#999', accent:'#333' },
+  modern:  { bg:'#ffffff', text:'#1e293b', header:'#dbeafe', border:'#93c5fd', accent:'#2563eb' },
+  pastel:  { bg:'#fffaf5', text:'#5c4033', header:'#ffe4ec', border:'#f7c9d9', accent:'#e07a9c' },
+  dark:    { bg:'#111827', text:'#f1f5f9', header:'#1f2937', border:'#374151', accent:'#34d399' },
+  forest:  { bg:'#f4f9f4', text:'#1e3a2b', header:'#d4ead9', border:'#a3c9ae', accent:'#2f7a4d' },
+  sunset:  { bg:'#fff8f0', text:'#5c2e0e', header:'#ffddb3', border:'#ffb066', accent:'#d9631e' },
+  lavender:{ bg:'#f8f6ff', text:'#3b2e5c', header:'#e3d9ff', border:'#c4b0f0', accent:'#7c4fd9' },
+  mono:    { bg:'#ffffff', text:'#000000', header:'#ffffff', border:'#000000', accent:'#000000' }
+};
+
+const MYSCHEDULE_FONTS = {
+  sans:     "'Noto Sans KR', sans-serif",
+  serif:    "'Noto Serif KR', serif",
+  myeongjo: "'Nanum Myeongjo', serif",
+  batang:   "'Gowun Batang', serif",
+  gaegu:    "'Gaegu', cursive",
+  jua:      "'Jua', sans-serif",
+  dohyeon:  "'Do Hyeon', sans-serif",
+  blackhan: "'Black Han Sans', sans-serif"
+};
+function buildMyScheduleHTML(teacher, styleKey, fontKey) {
+  const s = MYSCHEDULE_STYLES[styleKey] || MYSCHEDULE_STYLES.classic;
+  const fontFamily = MYSCHEDULE_FONTS[fontKey] || MYSCHEDULE_FONTS.sans;
+  let rows = '';
+  for (const p of PERIODS) {
+    rows += `<tr><td style="border:1px solid ${s.border};padding:8px;font-weight:700;background:${s.header};color:${s.accent}">${p}교시</td>`;
+    for (const d of DAYS) {
+      const cell = SCHEDULE[teacher]?.[d]?.[p];
+      rows += `<td style="border:1px solid ${s.border};padding:8px;text-align:center">
+        ${cell ? `<div style="font-weight:700">${toFullSubject(cell.subject)}</div><div style="font-size:11px;opacity:0.7">${roomFullName(cell.room)}</div>` : ''}
+      </td>`;
+    }
+    rows += `</tr>`;
+  }
+  return `
+  <div id="myschedule-capture" style="background:${s.bg};color:${s.text};font-family:${fontFamily};padding:24px;border-radius:12px;max-width:720px">
+    <h2 style="color:${s.accent};margin-bottom:4px">${teacher} 선생님 시간표</h2>
+    <p style="font-size:12px;opacity:0.7;margin-bottom:16px">2026학년도 2학기</p>
+    <table style="border-collapse:collapse;width:100%;font-size:13px">
+      <thead><tr>
+        <th style="border:1px solid ${s.border};padding:8px;background:${s.header};color:${s.accent}"></th>
+        ${DAYS.map(d => `<th style="border:1px solid ${s.border};padding:8px;background:${s.header};color:${s.accent}">${d}</th>`).join('')}
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+function renderMySchedule() {
+  const teacher = document.getElementById('myschedule-teacher').value;
+  const style = document.getElementById('myschedule-style').value;
+  const font = document.getElementById('myschedule-font').value;
+  const preview = document.getElementById('myschedule-preview');
+  const actions = document.getElementById('myschedule-actions');
+  if (!teacher) {
+    preview.innerHTML = '<div class="no-result" style="color:var(--red)">교사를 선택해주세요.</div>';
+    actions.style.display = 'none';
+    return;
+  }
+  preview.innerHTML = buildMyScheduleHTML(teacher, style, font);
+  actions.style.display = 'flex';
+}
+function printMySchedule() {
+  const el = document.getElementById('myschedule-capture');
+  if (!el) return;
+  const copies = parseInt(document.getElementById('myschedule-copies').value, 10) || 1;
+
+  const LAYOUT = {
+    1: { cols: 1, rows: 1, orient: 'landscape', scale: 1 },
+    2: { cols: 1, rows: 2, orient: 'portrait',  scale: 0.75 },
+    4: { cols: 2, rows: 2, orient: 'portrait',  scale: 0.42 },
+    6: { cols: 2, rows: 3, orient: 'portrait',  scale: 0.34 }
+  };
+  const layout = LAYOUT[copies] || LAYOUT[1];
+
+  const cellsHtml = Array(copies).fill(0).map(() => `
+    <div class="print-cell">
+      <div class="print-cell-inner">${el.outerHTML}</div>
+    </div>`).join('');
+
+  const win = window.open('', '_blank', 'width=900,height=1000');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <style>
+    @page { size: A4 ${layout.orient}; margin: 8mm; }
+    html, body { width:100%; height:100%; margin:0; }
+    .print-grid {
+      display: grid;
+      grid-template-columns: repeat(${layout.cols}, 1fr);
+      grid-template-rows: repeat(${layout.rows}, 1fr);
+      gap: 3mm;
+      width: 100%;
+      height: 100%;
+      box-sizing: border-box;
+    }
+    .print-cell {
+      border: 1px dashed #ccc;
+      overflow: hidden;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 2mm;
+      box-sizing: border-box;
+    }
+    .print-cell-inner {
+      zoom: ${layout.scale};
+      width: 100%;
+    }
+    @media print { .print-cell { border: none; } }
+  </style>
+  </head><body>
+  <div class="print-grid">${cellsHtml}</div>
+  <script>window.onload=()=>window.print()<\/script>
+  </body></html>`);
+  win.document.close();
+}
+function downloadMyScheduleAs(type) {
+  const el = document.getElementById('myschedule-capture');
+  const teacher = document.getElementById('myschedule-teacher').value;
+  if (!el) return;
+  html2canvas(el, { scale: 2 }).then(canvas => {
+    if (type === 'jpg') {
+      const link = document.createElement('a');
+      link.download = `${teacher}_시간표.jpg`;
+      link.href = canvas.toDataURL('image/jpeg', 0.95);
+      link.click();
+    } else {
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [canvas.width, canvas.height] });
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, canvas.width, canvas.height);
+      pdf.save(`${teacher}_시간표.pdf`);
+    }
+  });
 }
  init();
  selfInitTeacherSelects();
