@@ -2966,52 +2966,78 @@ function printAll() {
   const mm = today.getMonth()+1, dd = today.getDate();
   const dateStr = `${mm}/${dd}`;
 
-  const rows = [
-    ...absenceSelections.map(s => {
-      const liveCell = SCHEDULE[s.absentTeacher]?.[s.day]?.[String(s.period)];
-      const finalSubject = toFullSubject(s.subject || (liveCell ? liveCell.subject : ''));
-      const finalRoom    = s.room    || (liveCell ? liveCell.room    : '');
-      const cls = s.creativeClass ? s.creativeClass : roomToClass(finalRoom);
-      const dept = TEACHER_DEPT[s.subTeacher] || s.dept || '';
-      const abDateStr = s.dateVal ? dateStrToDisplay(s.dateVal) : dateStr;
-      return `<tr>
-        <td>${abDateStr}</td>
-        <td>${s.period}</td>
-        <td>${cls}</td>
-        <td class="subj-cell" data-text="${finalSubject}">${finalSubject}</td>
-        <td>${s.reason||''}</td>
-        <td></td>
-        <td></td>
-        <td></td>
-        <td></td>
-        <td>${dept}</td>
-        <td>${s.subTeacher}</td>
-        <td></td>
-      </tr>`;
-    }),
-    ...swapSelections.map(s => {
-      const liveSwapCell = SCHEDULE[s.myTeacher]?.[s.myDay]?.[String(s.myPeriod)];
-      const finalSwapSubject = toFullSubject(s.mySubject || (liveSwapCell ? liveSwapCell.subject : ''));
-      const finalSwapRoom    = s.myRoom    || (liveSwapCell ? liveSwapCell.room    : '');
-      const cls = roomToClass(finalSwapRoom);
-      const myActualDate = s.myDateVal ? dateStrToDisplay(s.myDateVal) : getDateOfDay(s.myDay);
-      const swapActualDate = s.swapDateVal ? dateStrToDisplay(s.swapDateVal) : getDateOfDay(s.swapDay, s.myDateVal);
-      return `<tr>
-        <td>${myActualDate}</td>
-        <td>${s.myPeriod}</td>
-        <td>${cls}</td>
-        <td class="subj-cell" data-text="${finalSwapSubject}">${finalSwapSubject}</td>
-        <td>${s.reason||''}</td>
-        <td>${swapActualDate}</td>
-        <td>${s.swapPeriod}</td>
-        <td>${s.swapTeacher}</td>
-        <td></td>
-        <td></td>
-        <td></td>
-        <td></td>
-      </tr>`;
-    })
-  ].join('');
+// 날짜 문자열("YYYY-MM-DD") → Date 객체로 변환 (날짜 없으면 맨 뒤로)
+function parseDateForSort(dateStr) {
+  if (!dateStr) return new Date(9999, 0, 1);
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+// 결보강 / 교체 항목을 하나로 합쳐서 정렬용 키를 붙임
+const combined = [
+  ...absenceSelections.map(s => ({
+    type: 'absence',
+    data: s,
+    sortDate: parseDateForSort(s.dateVal),
+    sortPeriod: parseInt(s.period) || 0
+  })),
+  ...swapSelections.map(s => ({
+    type: 'swap',
+    data: s,
+    sortDate: parseDateForSort(s.myDateVal),
+    sortPeriod: parseInt(s.myPeriod) || 0
+  }))
+];
+
+// 날짜 오름차순 → 같은 날짜면 교시 오름차순
+combined.sort((a, b) => a.sortDate - b.sortDate || a.sortPeriod - b.sortPeriod);
+
+const rows = combined.map(item => {
+  const s = item.data;
+  if (item.type === 'absence') {
+    const liveCell = SCHEDULE[s.absentTeacher]?.[s.day]?.[String(s.period)];
+    const finalSubject = toFullSubject(s.subject || (liveCell ? liveCell.subject : ''));
+    const finalRoom    = s.room    || (liveCell ? liveCell.room    : '');
+    const cls = s.creativeClass ? s.creativeClass : roomToClass(finalRoom);
+    const dept = TEACHER_DEPT[s.subTeacher] || s.dept || '';
+    const abDateStr = s.dateVal ? dateStrToDisplay(s.dateVal) : '';
+    return `<tr>
+      <td>${abDateStr}</td>
+      <td>${s.period}</td>
+      <td>${cls}</td>
+      <td class="subj-cell" data-text="${finalSubject}">${finalSubject}</td>
+      <td>${s.reason||''}</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>${dept}</td>
+      <td>${s.subTeacher}</td>
+      <td></td>
+    </tr>`;
+  } else {
+    const liveSwapCell = SCHEDULE[s.myTeacher]?.[s.myDay]?.[String(s.myPeriod)];
+    const finalSwapSubject = toFullSubject(s.mySubject || (liveSwapCell ? liveSwapCell.subject : ''));
+    const finalSwapRoom    = s.myRoom    || (liveSwapCell ? liveSwapCell.room    : '');
+    const cls = roomToClass(finalSwapRoom);
+    const myActualDate = s.myDateVal ? dateStrToDisplay(s.myDateVal) : getDateOfDay(s.myDay);
+    const swapActualDate = s.swapDateVal ? dateStrToDisplay(s.swapDateVal) : getDateOfDay(s.swapDay, s.myDateVal);
+    return `<tr>
+      <td>${myActualDate}</td>
+      <td>${s.myPeriod}</td>
+      <td>${cls}</td>
+      <td class="subj-cell" data-text="${finalSwapSubject}">${finalSwapSubject}</td>
+      <td>${s.reason||''}</td>
+      <td>${swapActualDate}</td>
+      <td>${s.swapPeriod}</td>
+      <td>${s.swapTeacher}</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+    </tr>`;
+  }
+}).join('');
 
   const sigTeacher = absenceSelections.length > 0
     ? absenceSelections[0].absentTeacher
