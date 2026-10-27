@@ -1685,6 +1685,7 @@
         <div>📌 학년반: 강의실 번호 자동변환 (105→1-5반) · 창체/셀프 모드는 직접 입력한 값 그대로 출력</div>
         <div>📌 인쇄 시 브라우저에서 <strong style="color:var(--amber)">용지 방향 → 가로(Landscape)</strong> 설정 필수</div>
         <div>📌 셀프 일지는 <strong style="color:var(--text)">별도 인쇄 버튼</strong>으로 처리 (우상단 패널과 별개)</div>
+        <div>📌 <strong style="color:var(--text)">🔗 연쇄 교체</strong>: 교체 가능 교사 조회 탭 위쪽 보라색 칸에서 사용합니다. 확정한 뒤에도 이전 항목은 그대로 남고, 조회는 <strong style="color:var(--text)">바뀐 시간표 기준</strong>으로 됩니다. 넘겨받은 수업 버튼을 누르면 그 수업을 다른 선생님과 이어서 교체할 수 있습니다. 중간 항목을 취소하면 거기에 이어진 항목도 함께 취소되고, 확정 목록은 이 브라우저에 자동 저장됩니다.</div>
       </div>
     </div>
   </div>
@@ -2321,7 +2322,7 @@ function doConfirmCreativeActivity(absentTeacher, day, period, subTeacher, absen
 
   document.getElementById('creative-modal')?.remove();
 
-  const existing = absenceSelections.findIndex(s => s.absentTeacher === absentTeacher && s.day === day && s.period === period);
+  const existing = absenceSelections.findIndex(s => s.absentTeacher === absentTeacher && s.day === day && String(s.period) === String(period) && (s.dateVal || '') === (document.getElementById('absent-date').value || ''));
   if (existing >= 0) absenceSelections.splice(existing, 1);
 
   // ★ dept: 보강 교사 기준
@@ -2438,7 +2439,7 @@ function confirmAbsence(absentTeacher, day, period, subTeacher) {
   const dept = TEACHER_DEPT[subTeacher] || '';
 
   const key = `${absentTeacher}-${day}-${period}`;
-  const existing = absenceSelections.findIndex(s => s.absentTeacher === absentTeacher && s.day === day && s.period === period);
+  const existing = absenceSelections.findIndex(s => s.absentTeacher === absentTeacher && s.day === day && String(s.period) === String(period) && (s.dateVal || '') === (document.getElementById('absent-date').value || ''));
 
   if (existing >= 0) {
     if (!confirm(`이미 같은 시간에 결보강이 선택되어 있습니다.\n교체하시겠습니까?\n\n현재: ${absenceSelections[existing].subTeacher} → 변경: ${subTeacher}`)) return;
@@ -4887,5 +4888,474 @@ function downloadMyScheduleAs(type) {
  init();
  selfInitTeacherSelects();
 </script>
+<!-- ===== 연쇄(다중) 결보강·교체 기능 (추가) ===== -->
+<style>
+  .chain-panel { margin: 0 0 16px; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(124,92,252,0.45); background: rgba(124,92,252,0.07); font-size: 12px; color: var(--text2); line-height: 1.6; }
+  .chain-panel .cp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .chain-panel .cp-title { font-size: 13px; font-weight: 900; color: var(--accent2); }
+  .chain-panel .cp-count { font-size: 11px; font-weight: 700; color: var(--amber); background: rgba(251,191,36,0.12); border-radius: 10px; padding: 1px 10px; }
+  .chain-panel .cp-desc { margin-top: 2px; }
+  .chain-panel .cp-note { margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; background: rgba(251,191,36,0.1); color: var(--amber); font-weight: 700; }
+  .chain-panel .cp-note.ok { background: rgba(52,211,153,0.1); color: var(--green); }
+  .chain-panel .cp-sub { margin-top: 10px; font-size: 11px; font-weight: 700; color: var(--text); }
+  .chain-panel .cp-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .chain-panel .cp-btn { padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(124,92,252,0.5); background: var(--surface2); color: var(--text); font-family: "Noto Sans KR", sans-serif; font-size: 11px; cursor: pointer; text-align: left; line-height: 1.5; }
+  .chain-panel .cp-btn:hover { background: rgba(124,92,252,0.18); }
+  .chain-panel .cp-btn.on { border-color: var(--amber); background: rgba(251,191,36,0.15); }
+  .chain-panel .cp-btn b { color: var(--accent2); }
+  .chain-panel .cp-btn small { color: var(--text3); }
+  .chain-msg { text-align: center; padding: 36px 16px; color: var(--text2); font-size: 13px; line-height: 1.8; }
+  .chain-msg b { color: var(--amber); }
+  .gb-chain { display: inline-block; margin-top: 2px; font-size: 10px; font-weight: 700; color: var(--accent2); background: rgba(124,92,252,0.15); border-radius: 4px; padding: 0 6px; }
+  @media (min-width: 1100px) { body.gb-open .tabs, body.gb-open .tab-panel { margin-right: 350px; } body.gb-open #global-basket { right: 16px; } }
+  @media (max-width: 1099px) { #global-basket { top: auto !important; bottom: 12px; left: 12px; right: 12px !important; width: auto !important; } }
+  #chain-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 4000; background: var(--surface2); color: var(--text); border: 1px solid rgba(124,92,252,0.5); border-radius: 10px; padding: 10px 16px; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); display: none; max-width: calc(100% - 32px); }
+</style>
+<div id="chain-toast"></div>
+
+<script>
+(function () {
+  // ---------- 기본 시간표 보관 (원본 데이터는 수정하지 않음) ----------
+  const BASE = {};
+  Object.keys(SCHEDULE).forEach(t => BASE[t] = SCHEDULE[t]);
+  const STORE_KEY = 'kshin_chain_v1';
+  let seqCounter = 0;
+
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const jsq = s => String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const val = id => (document.getElementById(id) || {}).value || '';
+
+  function mondayOf(dateVal) {
+    if (!dateVal) return '';
+    const [y, m, d] = dateVal.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    const dow = dt.getDay();
+    dt.setDate(dt.getDate() + (dow === 0 ? -6 : 1 - dow));
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  }
+  const inWeek = (dateVal, refMonday) => !dateVal || !refMonday || mondayOf(dateVal) === refMonday;
+  const disp = (dateVal, day) => dateVal ? `${dateStrToDisplay(dateVal)}(${day})` : `${day}요일`;
+  const slotKey = (dateVal, day, p) => `${dateVal || day}|${p}`;
+  const toast = msg => {
+    const el = document.getElementById('chain-toast');
+    el.textContent = msg; el.style.display = 'block';
+    clearTimeout(toast._t); toast._t = setTimeout(() => el.style.display = 'none', 3500);
+  };
+
+  // ---------- 확정 항목 = 시간표를 바꾸는 "단계" ----------
+  function ensureSeq() {
+    absenceSelections.forEach(s => { if (!s._seq) s._seq = ++seqCounter; });
+    swapSelections.forEach(s => { if (!s._seq) s._seq = ++seqCounter; });
+  }
+  // 각 단계가 시간표에 주는 변화: 누구에게서 수업이 빠지고(rm), 누구에게 들어가는지(add)
+  function moves(st) {
+    const s = st.s;
+    if (st.kind === 'ab') {
+      return [{ from: s.absentTeacher, to: s.subTeacher, dateVal: s.dateVal, day: s.day, p: String(s.period), subject: s.subject, room: s.room }];
+    }
+    return [
+      { from: s.myTeacher, to: s.swapTeacher, dateVal: s.myDateVal, day: s.myDay, p: String(s.myPeriod), subject: s.mySubject, room: s.myRoom },
+      { from: s.swapTeacher, to: s.myTeacher, dateVal: s.swapDateVal || s.myDateVal, day: s.swapDay, p: String(s.swapPeriod), subject: s.swapSubject, room: s.swapRoom }
+    ];
+  }
+  function allSteps() {
+    ensureSeq();
+    const list = [
+      ...absenceSelections.map(s => ({ kind: 'ab', s })),
+      ...swapSelections.map(s => ({ kind: 'sw', s }))
+    ].sort((a, b) => a.s._seq - b.s._seq);
+    list.forEach((st, i) => { st.no = i + 1; st.mv = moves(st); });
+    return list;
+  }
+
+  // ---------- 확정 내역이 반영된 "바뀐 시간표" ----------
+  function buildEffective(refDate, excludeSeqs) {
+    const ref = mondayOf(refDate);
+    const eff = {}, removedBy = {};
+    Object.keys(BASE).forEach(t => eff[t] = BASE[t]);
+    const own = new Set();
+    const dayObj = (t, d) => {
+      if (!own.has(t)) { eff[t] = JSON.parse(JSON.stringify(BASE[t] || {})); own.add(t); }
+      if (!eff[t][d]) eff[t][d] = {};
+      return eff[t][d];
+    };
+    allSteps().forEach(st => {
+      if (excludeSeqs && excludeSeqs.has(st.s._seq)) return;
+      const mv = st.mv.filter(m => inWeek(m.dateVal, ref));
+      mv.forEach(m => { delete dayObj(m.from, m.day)[m.p]; removedBy[`${m.from}|${m.day}|${m.p}`] = { no: st.no, to: m.to, kind: st.kind }; });
+      mv.forEach(m => { dayObj(m.to, m.day)[m.p] = { subject: m.subject, room: m.room, _from: m.from, _no: st.no, _kind: st.kind }; delete removedBy[`${m.to}|${m.day}|${m.p}`]; });
+    });
+    return { eff, removedBy };
+  }
+
+  // 결보강 탭: 지금 보고 있는 수업에 이미 확정된 결보강은 빼고 계산 (보강 교사 바꾸기 가능하도록)
+  function absenceExclude() {
+    const t = val('absent-teacher'), dv = val('absent-date'), d = val('absent-day'), p = val('absent-period');
+    const ex = new Set();
+    if (!t || !d || !p) return ex;
+    absenceSelections.forEach(s => {
+      if (s.absentTeacher === t && String(s.period) === p && slotKey(s.dateVal, s.day, s.period) === slotKey(dv, d, p)) ex.add(s._seq);
+    });
+    return ex;
+  }
+
+  // 결강 처리된 선생님은 그 시간에 보강·교체 상대가 될 수 없음
+  function dateOfDay(refDate, day) {
+    const mon = mondayOf(refDate);
+    if (!mon || !DAY_NUM[day]) return '';
+    const [y, m, d] = mon.split('-').map(Number);
+    const dt = new Date(y, m - 1, d + DAY_NUM[day] - 1);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  }
+  const DAY_NUM = { '월': 1, '화': 2, '수': 3, '목': 4, '금': 5 };
+  // 결강(보강 요청)한 선생님, 결강 사유로 교체를 요청한 선생님 모두 그 시간에는 수업 불가
+  function absentAt(t, dateVal, day, p, excludeSeqs) {
+    const k = slotKey(dateVal, day, p);
+    return absenceSelections.some(s => s.absentTeacher === t && String(s.period) === String(p)
+        && slotKey(s.dateVal, s.day, s.period) === k && !(excludeSeqs && excludeSeqs.has(s._seq)))
+      || swapSelections.some(s => s.myTeacher === t && String(s.myPeriod) === String(p) && slotKey(s.myDateVal, s.myDay, s.myPeriod) === k);
+  }
+
+  let depth = 0, ctxRef = '', ctxEx = null;
+  function withEff(refDate, excludeSeqs, fn, markAbsent) {
+    if (depth > 0 || (!absenceSelections.length && !swapSelections.length)) return fn();
+    const { eff } = buildEffective(refDate, excludeSeqs);
+    if (markAbsent) {
+      // 결강 시간은 "수업 있음"으로 표시해 교체 후보·초록 칸에서 빠지도록
+      const ref = mondayOf(refDate);
+      const mark = (t, dateVal, day, p) => {
+        if (!inWeek(dateVal, ref) || !t || !day) return;
+        if (eff[t] === BASE[t]) eff[t] = JSON.parse(JSON.stringify(BASE[t] || {}));
+        if (!eff[t][day]) eff[t][day] = {};
+        if (!eff[t][day][String(p)]) eff[t][day][String(p)] = { subject: '결강', room: '-', _absent: true };
+      };
+      absenceSelections.forEach(s => { if (!(excludeSeqs && excludeSeqs.has(s._seq))) mark(s.absentTeacher, s.dateVal, s.day, s.period); });
+      swapSelections.forEach(s => mark(s.myTeacher, s.myDateVal, s.myDay, s.myPeriod));
+    }
+    depth++; ctxRef = refDate; ctxEx = excludeSeqs;
+    Object.keys(eff).forEach(t => SCHEDULE[t] = eff[t]);
+    try { return fn(); }
+    finally { Object.keys(BASE).forEach(t => SCHEDULE[t] = BASE[t]); depth--; ctxRef = ''; ctxEx = null; }
+  }
+  const _origIsFree = isFree;
+  isFree = function (t, day, p) {
+    if (!_origIsFree(t, day, p)) return false;
+    if (depth > 0 && absentAt(t, ctxRef ? dateOfDay(ctxRef, day) : '', day, p, ctxEx)) return false;
+    return true;
+  };
+  const swapCtx = fn => withEff(val("swap-date"), null, fn, true);
+  const absCtx = fn => { ensureSeq(); return withEff(val('absent-date'), absenceExclude(), fn); };
+
+  // ---------- 기존 기능들이 바뀐 시간표를 보도록 감싸기 ----------
+  const wrap = (name, ctxFn) => {
+    const orig = window[name];
+    if (typeof orig !== 'function') return;
+    window[name] = function () { const a = arguments; return ctxFn(() => orig.apply(this, a)); };
+  };
+  ['highlightTeacher', 'drawConnectionLine', 'confirmAbsence', 'confirmCreativeActivity', 'doConfirmCreativeActivity', 'renderSubList', 'renderAbsenceGrid'].forEach(n => wrap(n, absCtx));
+  wrap('openTeacherPopup', swapCtx);
+
+  // 교시 목록: 넘겨받은 수업 / 넘어간 수업 표시
+  const _origFilter = filterPeriodsByTeacherDay;
+  filterPeriodsByTeacherDay = function (prefix) {
+    (prefix === 'absent' ? absCtx : swapCtx)(() => _origFilter(prefix));
+    if (prefix === 'absent') return;
+    if (!absenceSelections.length && !swapSelections.length) return;
+    const t = val(prefix === 'absent' ? 'absent-teacher' : 'swap-teacher'), d = val(prefix + '-day');
+    if (!t || !d) return;
+    const { eff, removedBy } = buildEffective(val(prefix + '-date'), null);
+    [...document.getElementById(prefix + '-period').options].forEach(o => {
+      if (!o.value) return;
+      const c = eff[t]?.[d]?.[o.value], gone = removedBy[`${t}|${d}|${o.value}`];
+      if (c && c._no) o.textContent = `${o.value}교시 — ${c.subject} (${c.room}호) 🔗${c._no}번에서 넘겨받음`;
+      else if (!c && gone) o.textContent = `${o.value}교시 — ${gone.no}번에서 ${gone.to} 선생님께 넘어감`;
+    });
+  };
+
+  // ---------- 연쇄 교체 안내 칸 (교체 조회 탭) ----------
+  function candidates() {
+    const out = [], seen = new Set();
+    allSteps().forEach(st => st.mv.forEach(m => {
+      const c = buildEffective(m.dateVal, null).eff[m.to]?.[m.day]?.[m.p];
+      const k = `${m.to}|${slotKey(m.dateVal, m.day, m.p)}`;
+      if (c && c._no === st.no && !seen.has(k)) { seen.add(k); out.push({ t: m.to, from: m.from, dv: m.dateVal || '', d: m.day, p: m.p, subj: m.subject, no: st.no, kind: st.kind }); }
+    }));
+    return out;
+  }
+
+  function slotStatus(prefix) {
+    const t = val(prefix === 'absent' ? 'absent-teacher' : 'swap-teacher'), dv = val(prefix + '-date'), d = val(prefix + '-day'), p = val(prefix + '-period');
+    if (!t || !d || !p || (!absenceSelections.length && !swapSelections.length)) return null;
+    const ex = prefix === 'absent' ? (ensureSeq(), absenceExclude()) : null;
+    const { eff, removedBy } = buildEffective(dv, ex);
+    const c = eff[t]?.[d]?.[p], gone = removedBy[`${t}|${d}|${p}`];
+    const confirmedHere = prefix === 'absent' ? absenceSelections.find(s => ex.has(s._seq)) : null;
+    return { t, dv, d, p, cell: c, gone: !c && gone ? gone : null, confirmedHere };
+  }
+
+  function renderPanel(prefix) {
+    const el = document.getElementById('chain-panel-' + prefix);
+    if (!el) return;
+    const total = absenceSelections.length + swapSelections.length;
+    const isAbs = prefix === 'absent';
+    const verb = isAbs ? '보강' : '교체';
+    const st = slotStatus(prefix);
+    let note = '';
+    if (st) {
+      if (st.gone) note = `<div class="cp-note">이 수업은 ${st.gone.no}번 항목에서 ${esc(st.gone.to)} 선생님께 넘어갔습니다. 아래 버튼에서 넘겨받은 수업을 골라 이어서 처리하세요.</div>`;
+      else if (st.cell && st.cell._no) note = `<div class="cp-note ok">🔗 이 수업은 ${st.cell._no}번 항목에서 ${esc(st.cell._from)} 선생님께 넘겨받은 수업입니다. 여기서 ${verb}을 확정하면 ${st.cell._no}번에 이어지는 항목으로 기록됩니다.</div>`;
+      if (st.confirmedHere) note += `<div class="cp-note ok">이 수업은 이미 ${esc(st.confirmedHere.subTeacher)} 선생님 보강으로 확정되어 있습니다. 다른 선생님을 고르면 보강 교사가 바뀝니다.</div>`;
+    }
+    const cands = candidates();
+    const btns = cands.map(c => {
+      const on = st && c.t === st.t && c.dv === st.dv && c.p === st.p;
+      return `<button class="cp-btn${on ? ' on' : ''}" onclick="chainContinue('${prefix}','${jsq(c.t)}','${jsq(c.dv)}','${jsq(c.d)}','${jsq(c.p)}')"><b>${esc(c.t)}</b> ${esc(disp(c.dv, c.d))} ${esc(c.p)}교시 · ${esc(c.subj)}<br><small>${c.no}번에서 ${esc(c.from)} 선생님께 넘겨받음 → 이어서 ${verb}</small></button>`;
+    }).join('');
+
+    el.innerHTML = `<div class="cp-head"><span class="cp-title">🔗 연쇄 교체</span>${total ? `<span class="cp-count">확정 ${total}건 반영 중</span>` : ''}</div>
+      <div class="cp-desc">${total
+        ? '앞서 확정한 결보강·교체가 반영된 시간표로 조회합니다. 새로 확정해도 이전 항목은 지워지지 않습니다.'
+        : `교체를 확정하면, 선생님이 새로 넘겨받은 수업이 여기에 나타납니다. 그 수업을 눌러 다른 선생님과 이어서 ${verb}할 수 있습니다.`}</div>
+      ${note}
+      ${btns ? `<div class="cp-sub">넘겨받은 수업 (눌러서 이어서 ${verb})</div><div class="cp-list">${btns}</div>` : ''}`;
+  }
+  const renderPanels = () => renderPanel('swap');
+
+  function buildPanels() {
+    const swapAnchor = document.getElementById('swap-result');
+    if (swapAnchor && !document.getElementById('chain-panel-swap')) {
+      const p = document.createElement('div'); p.id = 'chain-panel-swap'; p.className = 'chain-panel';
+      swapAnchor.parentNode.insertBefore(p, swapAnchor);
+    }
+    ['swap'].forEach(prefix => ['-teacher', '-date', '-period'].forEach(suf => {
+      const el = document.getElementById(prefix + suf);
+      if (el) el.addEventListener('change', () => renderPanel(prefix));
+    }));
+  }
+
+  window.chainContinue = function (prefix, t, dv, d, p) {
+    document.getElementById(prefix + '-teacher').value = t;
+    document.getElementById(prefix + '-date').value = dv;
+    if (dv) syncDayFromDate(prefix);
+    else { document.getElementById(prefix + '-day').value = d; filterPeriodsByTeacherDay(prefix); }
+    document.getElementById(prefix + '-period').value = p;
+    if (prefix === 'absent') findSubstitutes(); else showSwapTable();
+    const el = document.getElementById('chain-panel-' + prefix);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  // ---------- 결보강 찾기 ----------
+  const _origFind = findSubstitutes;
+  findSubstitutes = function () {
+    filterPeriodsByTeacherDay('absent');
+    const st = slotStatus('absent');
+    if (st && st.gone) {
+      document.getElementById('sub-list').innerHTML =
+        `<div class="chain-msg">이 수업은 확정 목록 <b>${st.gone.no}번</b>에서<br><b>${esc(st.gone.to)}</b> 선생님께 넘어간 수업입니다.<br><br>보강이 필요하면 확정 목록을 확인해 주세요.</div>`;
+      return;
+    }
+    return absCtx(() => _origFind());
+  };
+
+  // ---------- 교체 조회 ----------
+  const _origShowSwap = showSwapTable;
+  showSwapTable = function () {
+    filterPeriodsByTeacherDay('swap');
+    const st = slotStatus('swap');
+    renderPanel('swap');
+    if (st && st.gone) {
+      document.getElementById('swap-result').innerHTML =
+        `<div class="chain-msg">이 수업은 <b>${st.gone.no}번 항목</b>에서 <b>${esc(st.gone.to)}</b> 선생님께 넘어갔습니다.<br>위의 🔗 버튼에서 넘겨받은 수업을 골라 이어서 교체하세요.</div>`;
+      return;
+    }
+    swapCtx(() => _origShowSwap());
+  };
+
+  // 교체 슬롯 선택: 이전 교체를 지우지 않음
+  selectSwapSlot = function (e, myTeacher, myDay, myPeriod, mySubject, myRoom, swapTeacher, swapSubject, swapDay, swapPeriod, swapRoom) {
+    if (e && e.stopPropagation) e.stopPropagation();
+    const myDateVal = val('swap-date');
+    const swapReason = (document.getElementById('swap-reason')?.value || '').trim();
+
+    const dup = swapSelections.find(s => s.myTeacher === myTeacher && s.myDay === myDay && String(s.myPeriod) === String(myPeriod)
+      && (s.myDateVal || '') === (myDateVal || '') && s.swapTeacher === swapTeacher && s.swapDay === swapDay && String(s.swapPeriod) === String(swapPeriod));
+    if (dup) { removeStep(dup._seq); return; }
+
+    const bad = swapCtx(() => {
+      const mine = SCHEDULE[myTeacher]?.[swapDay]?.[String(swapPeriod)];
+      const theirs = SCHEDULE[swapTeacher]?.[myDay]?.[String(myPeriod)];
+      if (mine) return `${myTeacher} 선생님이 ${swapDay}요일 ${swapPeriod}교시에 이미 수업이 있습니다.\n(${mine.subject} / ${mine.room}호${mine._no ? ' · ' + mine._no + '번에서 넘겨받음' : ''})`;
+      if (theirs) return `${swapTeacher} 선생님이 ${myDay}요일 ${myPeriod}교시에 이미 수업이 있습니다.\n(${theirs.subject} / ${theirs.room}호${theirs._no ? ' · ' + theirs._no + '번에서 넘겨받음' : ''})`;
+      if (absentAt(swapTeacher, myDateVal, myDay, myPeriod)) return `${swapTeacher} 선생님은 ${disp(myDateVal, myDay)} ${myPeriod}교시에 결강 처리되어 있습니다.`;
+      return '';
+    });
+    if (bad) { alert('❌ 교체 불가\n\n' + bad + '\n\n※ 앞서 확정한 결보강·교체가 반영된 시간표 기준입니다.'); return; }
+
+    _pendingSwap = { myTeacher, myDay, myPeriod, mySubject, myRoom, swapTeacher, swapSubject, swapDay, swapPeriod, swapRoom, myDateVal, reason: swapReason };
+    openSwapDateModal(myTeacher, myDay, myPeriod, mySubject, swapTeacher, swapSubject, swapDay, swapPeriod, myDateVal);
+  };
+
+  // 교체 확정: 실제 날짜 기준으로 다시 확인
+  confirmSwapDateModal = function () {
+    if (!_pendingSwap) return;
+    if (!_sdmSelectedDate) { alert('교체 날짜를 선택해주세요.'); return; }
+    const s = _pendingSwap, swapDateVal = _sdmSelectedDate;
+    const effSwap = buildEffective(swapDateVal, null).eff, effMy = buildEffective(s.myDateVal, null).eff;
+    const mine = effSwap[s.myTeacher]?.[s.swapDay]?.[String(s.swapPeriod)];
+    const theirLesson = effSwap[s.swapTeacher]?.[s.swapDay]?.[String(s.swapPeriod)];
+    const theirs = effMy[s.swapTeacher]?.[s.myDay]?.[String(s.myPeriod)];
+    let bad = '';
+    if (mine) bad = `${s.myTeacher} 선생님이 ${disp(swapDateVal, s.swapDay)} ${s.swapPeriod}교시에 이미 수업이 있습니다. (${mine.subject})`;
+    else if (theirs) bad = `${s.swapTeacher} 선생님이 ${disp(s.myDateVal, s.myDay)} ${s.myPeriod}교시에 이미 수업이 있습니다. (${theirs.subject})`;
+    else if (absentAt(s.swapTeacher, s.myDateVal, s.myDay, s.myPeriod)) bad = `${s.swapTeacher} 선생님은 ${disp(s.myDateVal, s.myDay)} ${s.myPeriod}교시에 결강 처리되어 있습니다.`;
+    else if (absentAt(s.myTeacher, swapDateVal, s.swapDay, s.swapPeriod)) bad = `${s.myTeacher} 선생님은 ${disp(swapDateVal, s.swapDay)} ${s.swapPeriod}교시에 결강 처리되어 있습니다.`;
+    else if (!theirLesson) bad = `${s.swapTeacher} 선생님의 ${disp(swapDateVal, s.swapDay)} ${s.swapPeriod}교시 수업은 앞선 항목에서 이미 다른 선생님께 넘어갔습니다.`;
+    if (bad) { alert('❌ 교체 불가\n\n' + bad); return; }
+
+    const nextNo = absenceSelections.length + swapSelections.length + 1;
+    if (!confirm(`${nextNo}번 항목으로 교체를 확정하시겠습니까?\n(앞서 확정한 항목은 그대로 유지됩니다)\n\n${s.myTeacher}: ${disp(s.myDateVal, s.myDay)} ${s.myPeriod}교시 ${s.mySubject} (${s.myRoom}호)\n   ↔\n${s.swapTeacher}: ${disp(swapDateVal, s.swapDay)} ${s.swapPeriod}교시 ${s.swapSubject} (${s.swapRoom}호)`)) return;
+
+    swapSelections.push({ ...s, swapDateVal, _seq: ++seqCounter });
+    closeSwapDateModal();
+    updateGlobalBasket();
+    showSwapTable();
+    toast(`✅ ${nextNo}번 교체 확정. 넘겨받은 수업은 위 🔗 칸에서 이어서 처리할 수 있어요.`);
+    return true;
+  };
+
+  // ---------- 취소: 이 항목에 이어진 항목도 함께 ----------
+  function dependents(seq) {
+    const steps = allSteps();
+    const bad = new Set([seq]);
+    steps.forEach(st => {
+      if (st.s._seq <= seq || bad.has(st.s._seq)) return;
+      const hit = steps.some(pr => bad.has(pr.s._seq) && pr.s._seq < st.s._seq && pr.mv.some(a => st.mv.some(b =>
+        (b.from === a.to && slotKey(b.dateVal, b.day, b.p) === slotKey(a.dateVal, a.day, a.p)) ||
+        (b.to === a.from && slotKey(b.dateVal, b.day, b.p) === slotKey(a.dateVal, a.day, a.p)))));
+      if (hit) bad.add(st.s._seq);
+    });
+    bad.delete(seq);
+    return [...bad];
+  }
+  window.removeStep = function (seq) {
+    const steps = allSteps();
+    const me = steps.find(st => st.s._seq === seq);
+    if (!me) return;
+    const deps = dependents(seq);
+    if (deps.length) {
+      const nos = steps.filter(st => deps.includes(st.s._seq)).map(st => st.no + '번').join(', ');
+      if (!confirm(`${me.no}번 항목에 이어진 항목(${nos})이 있습니다.\n${me.no}번을 취소하면 이 항목들도 시간표가 맞지 않게 되므로 함께 취소됩니다.\n\n진행할까요?`)) return;
+    }
+    const drop = new Set([seq, ...deps]);
+    absenceSelections = absenceSelections.filter(s => !drop.has(s._seq));
+    swapSelections = swapSelections.filter(s => !drop.has(s._seq));
+    updateGlobalBasket();
+    if (document.getElementById('swap-result')?.querySelector('#swap-table, .chain-msg')) showSwapTable();
+  };
+
+  // ---------- 확정 목록 패널 ----------
+  function linksOf(st, steps) {
+    const nos = new Set();
+    steps.forEach(pr => {
+      if (pr.s._seq >= st.s._seq) return;
+      pr.mv.forEach(a => st.mv.forEach(b => {
+        if ((b.from === a.to || b.to === a.from) && slotKey(b.dateVal, b.day, b.p) === slotKey(a.dateVal, a.day, a.p)) nos.add(pr.no);
+      }));
+    });
+    return [...nos];
+  }
+
+  function save() {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify({ abs: absenceSelections, swap: swapSelections, seq: seqCounter, at: Date.now() }));
+    } catch (e) {}
+  }
+  function restore() {
+    try {
+      const d = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+      if (!d || !Array.isArray(d.abs) || !Array.isArray(d.swap)) return 0;
+      absenceSelections = d.abs; swapSelections = d.swap; seqCounter = d.seq || 0;
+      return d.abs.length + d.swap.length;
+    } catch (e) { return 0; }
+  }
+
+  updateGlobalBasket = function () {
+    const steps = allSteps();
+    save();
+    renderPanels();
+    const panel = document.getElementById('global-basket');
+    if (!panel) return;
+    if (!steps.length) { panel.style.display = 'none'; return; }
+    panel.style.display = 'block';
+    document.getElementById('gb-count').textContent = steps.length;
+
+    document.getElementById('gb-items').innerHTML = steps.map(st => {
+      const s = st.s, links = linksOf(st, steps);
+      const linkHtml = links.length ? `<br><span class="gb-chain">🔗 ${links.join('·')}번에서 이어짐</span>` : '';
+      if (st.kind === 'ab') {
+        const cls = s.creativeClass ? s.creativeClass : roomToClass(s.room) + '반';
+        return `<div class="gb-item">
+          <span class="gb-num">${st.no}</span>
+          <div style="flex:1">
+            <span style="color:var(--red);font-weight:700">${esc(s.absentTeacher)}</span>
+            <span style="color:var(--text2);font-size:10px"> ${esc(disp(s.dateVal, s.day))} ${esc(s.period)}교시</span><br>
+            <span style="color:var(--text3);font-size:10px">${esc(s.subject)} · ${esc(cls)}${s.reason ? ' · ' + esc(s.reason) : ''}</span>
+            <span style="color:var(--text3);margin:0 4px">→</span>
+            <span style="color:var(--green);font-weight:700">${esc(s.subTeacher)}</span>
+            <span style="color:var(--text3);font-size:10px"> 보강</span>${linkHtml}
+          </div>
+          <span style="cursor:pointer;color:var(--text3);flex-shrink:0" title="취소" onclick="removeStep(${s._seq})">✕</span>
+        </div>`;
+      }
+      return `<div class="gb-item">
+        <span class="gb-num" style="background:rgba(251,191,36,0.15);color:var(--amber)">${st.no}</span>
+        <div style="flex:1">
+          <span style="color:var(--red);font-weight:700">${esc(s.myTeacher)}</span>
+          <span style="color:var(--text2);font-size:10px"> ${esc(disp(s.myDateVal, s.myDay))} ${esc(s.myPeriod)}교시</span><br>
+          <span style="color:var(--text3);font-size:10px">${esc(s.mySubject)} · ${esc(roomToClass(s.myRoom))}반${s.reason ? ' · ' + esc(s.reason) : ''}</span>
+          <span style="color:var(--text3);margin:0 4px">↔</span>
+          <span style="color:var(--amber);font-weight:700">${esc(s.swapTeacher)}</span>
+          <span style="color:var(--text2);font-size:10px"> ${esc(disp(s.swapDateVal, s.swapDay))} ${esc(s.swapPeriod)}교시</span>
+          <span style="color:var(--text3);font-size:10px"> 교체</span>${linkHtml}
+        </div>
+        <span style="cursor:pointer;color:var(--text3);flex-shrink:0" title="취소" onclick="removeStep(${s._seq})">✕</span>
+      </div>`;
+    }).join('');
+  };
+
+  const _renderBasket = updateGlobalBasket;
+  updateGlobalBasket = function () { _renderBasket(); reserveSpace(); };
+
+  // 확정 목록 패널이 탭 버튼을 가리지 않도록 탭 아래에 위치
+  function placeBasket() {
+    const panel = document.getElementById('global-basket'), tabs = document.querySelector('.tabs');
+    if (!panel || !tabs) return;
+    if (window.innerWidth < 1100) { const bd = document.getElementById('gb-body'); if (bd) bd.style.maxHeight = '45vh'; return; }
+    const top = Math.max(16, Math.round(tabs.getBoundingClientRect().bottom + 12));
+    panel.style.top = top + 'px';
+    const body = document.getElementById('gb-body');
+    if (body) body.style.maxHeight = Math.max(160, window.innerHeight - top - 90) + 'px';
+  }
+  // 넓은 화면: 확정 목록 자리만큼 본문을 비워 가림 방지 / 좁은 화면: 접힌 상태로 시작
+  function reserveSpace() {
+    const panel = document.getElementById('global-basket');
+    const visible = panel && panel.style.display !== 'none' && panel.style.display !== '';
+    document.body.classList.toggle('gb-open', !!visible && window.innerWidth >= 1100);
+    placeBasket();
+  }
+  window.addEventListener('scroll', placeBasket, { passive: true });
+  window.addEventListener('resize', reserveSpace);
+  if (window.innerWidth < 1100 && typeof toggleBasketCollapse === 'function' && !_basketCollapsed) toggleBasketCollapse();
+
+  // ---------- 시작 ----------
+  placeBasket();
+  buildPanels();
+  const restored = restore();
+  updateGlobalBasket();
+  if (restored) toast(`이전에 작업하던 확정 목록 ${restored}건을 불러왔습니다. 필요 없으면 확정 목록의 ✕로 지우세요.`);
+})();
+</script>
+<!-- ===== 연쇄(다중) 결보강·교체 기능 끝 ===== -->
+
 </body>
 </html>
