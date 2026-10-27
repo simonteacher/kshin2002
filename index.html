@@ -1686,6 +1686,7 @@
         <div>📌 인쇄 시 브라우저에서 <strong style="color:var(--amber)">용지 방향 → 가로(Landscape)</strong> 설정 필수</div>
         <div>📌 셀프 일지는 <strong style="color:var(--text)">별도 인쇄 버튼</strong>으로 처리 (우상단 패널과 별개)</div>
         <div>📌 <strong style="color:var(--text)">🔗 연쇄 교체</strong>: 교체 가능 교사 조회 탭 위쪽 보라색 칸에서 사용합니다. 확정한 뒤에도 이전 항목은 그대로 남고, 조회는 <strong style="color:var(--text)">바뀐 시간표 기준</strong>으로 됩니다. 넘겨받은 수업 버튼을 누르면 그 수업을 다른 선생님과 이어서 교체할 수 있습니다. 중간 항목을 취소하면 거기에 이어진 항목도 함께 취소되고, 확정 목록은 이 브라우저에 자동 저장됩니다.</div>
+        <div>📌 <strong style="color:var(--text)">교사 시간표 출력</strong>: 「✏️ 시간표 수정」을 누른 뒤 칸이나 제목을 눌러 직접 고칠 수 있습니다. 고친 내용은 인쇄·PDF·JPG에만 반영되고(다른 탭 시간표는 그대로), 이 브라우저에 저장됩니다.</div>
       </div>
     </div>
   </div>
@@ -5356,6 +5357,188 @@ function downloadMyScheduleAs(type) {
 })();
 </script>
 <!-- ===== 연쇄(다중) 결보강·교체 기능 끝 ===== -->
+
+<!-- ===== 교사 시간표 출력: 수동 수정 기능 (추가) ===== -->
+<style>
+  #ms-edit-bar { display: none; align-items: center; flex-wrap: wrap; gap: 8px; margin: -6px 0 14px; font-size: 12px; color: var(--text2); }
+  #ms-edit-bar .ms-chip { background: rgba(124,92,252,0.12); color: var(--accent2); border-radius: 10px; padding: 3px 10px; font-weight: 700; }
+  #ms-edit-bar button { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); color: var(--text2); font-family: "Noto Sans KR", sans-serif; font-size: 12px; cursor: pointer; }
+  #ms-edit-bar button:hover { color: var(--text); border-color: var(--text3); }
+  #ms-edit-toggle.on { background: linear-gradient(135deg, var(--accent2), #5b21b6) !important; }
+  #myschedule-preview.ms-editing .ms-cell, #myschedule-preview.ms-editing .ms-title { cursor: pointer; position: relative; }
+  #myschedule-preview.ms-editing .ms-cell:hover, #myschedule-preview.ms-editing .ms-title:hover { outline: 2px dashed #7c5cfc; outline-offset: -3px; }
+  #myschedule-preview.ms-editing .ms-edited::after { content: '✏️'; position: absolute; top: 2px; right: 3px; font-size: 10px; }
+  #ms-modal { position: fixed; inset: 0; z-index: 3500; background: rgba(0,0,0,0.55); display: none; align-items: center; justify-content: center; padding: 16px; }
+  #ms-modal.show { display: flex; }
+  #ms-modal .box { width: min(380px, 100%); background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; box-shadow: 0 12px 40px rgba(0,0,0,0.6); }
+  #ms-modal h4 { font-size: 15px; font-weight: 900; color: var(--text); margin-bottom: 4px; }
+  #ms-modal .orig { font-size: 11px; color: var(--text3); margin-bottom: 12px; }
+  #ms-modal label { display: block; font-size: 12px; color: var(--text2); margin: 8px 0 4px; }
+  #ms-modal input { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 9px 12px; border-radius: 8px; font-family: "Noto Sans KR", sans-serif; font-size: 14px; }
+  #ms-modal .btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
+  #ms-modal .btns button { flex: 1; padding: 9px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); color: var(--text2); font-family: "Noto Sans KR", sans-serif; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+  #ms-modal .btns .primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: none; }
+</style>
+
+<div id="ms-modal" onclick="if(event.target===this)msCloseEditor()">
+  <div class="box">
+    <h4 id="ms-m-title"></h4>
+    <div class="orig" id="ms-m-orig"></div>
+    <label id="ms-m-l1" for="ms-m-f1"></label><input id="ms-m-f1" autocomplete="off">
+    <label id="ms-m-l2" for="ms-m-f2"></label><input id="ms-m-f2" autocomplete="off">
+    <div class="btns">
+      <button class="primary" onclick="msApply()">적용</button>
+      <button id="ms-m-empty" onclick="msApply(true)">빈 칸으로</button>
+      <button onclick="msReset()">원래대로</button>
+      <button onclick="msCloseEditor()">취소</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const KEY = 'kshin_ms_edits_v1';
+  let EDITS = {};
+  try { EDITS = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { EDITS = {}; }
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(EDITS)); } catch (e) {} };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const teacherNow = () => document.getElementById('myschedule-teacher').value;
+  const ed = t => (EDITS[t] = EDITS[t] || { cells: {} });
+  const countEdits = t => { const e = EDITS[t]; if (!e) return 0; return Object.keys(e.cells || {}).length + ((e.title != null || e.sub != null) ? 1 : 0); };
+  let editing = false, target = null;
+
+  // ---------- 수정 내용을 시간표 그림에 반영 ----------
+  const _origBuild = buildMyScheduleHTML;
+  buildMyScheduleHTML = function (teacher, styleKey, fontKey) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = _origBuild(teacher, styleKey, fontKey);
+    const e = EDITS[teacher] || { cells: {} };
+    const h2 = tmp.querySelector('h2'), sub = tmp.querySelector('#myschedule-capture > p');
+    if (h2) { h2.classList.add('ms-title'); h2.dataset.kind = 'title'; if (e.title != null) { h2.textContent = e.title; h2.classList.add('ms-edited'); } }
+    if (sub) { sub.classList.add('ms-title'); sub.dataset.kind = 'title'; if (e.sub != null) { sub.textContent = e.sub; sub.classList.add('ms-edited'); } }
+    tmp.querySelectorAll('tbody tr').forEach((tr, pi) => {
+      const tds = tr.querySelectorAll('td');
+      DAYS.forEach((d, di) => {
+        const td = tds[di + 1]; if (!td) return;
+        const p = PERIODS[pi];
+        td.classList.add('ms-cell'); td.dataset.d = d; td.dataset.p = p;
+        const c = (e.cells || {})[`${d}|${p}`];
+        if (!c) return;
+        td.classList.add('ms-edited');
+        td.innerHTML = c.empty ? '' : `<div style="font-weight:700">${esc(c.subject)}</div>${c.room ? `<div style="font-size:11px;opacity:0.7">${esc(c.room)}</div>` : ''}`;
+      });
+    });
+    return tmp.innerHTML;
+  };
+
+  // ---------- 수정 버튼 줄 ----------
+  const actions = document.getElementById('myschedule-actions');
+  const toggleBtn = document.createElement('button');
+  toggleBtn.id = 'ms-edit-toggle'; toggleBtn.className = 'find-btn';
+  toggleBtn.style.background = 'linear-gradient(135deg,#6d28d9,#4c1d95)';
+  toggleBtn.textContent = '✏️ 시간표 수정';
+  toggleBtn.onclick = () => setEditing(!editing);
+  actions.insertBefore(toggleBtn, actions.firstChild);
+
+  const bar = document.createElement('div');
+  bar.id = 'ms-edit-bar';
+  actions.insertAdjacentElement('afterend', bar);
+
+  function renderBar() {
+    const t = teacherNow(), n = t ? countEdits(t) : 0;
+    const shown = !!document.getElementById('myschedule-capture');
+    bar.style.display = shown && (editing || n) ? 'flex' : 'none';
+    bar.innerHTML = (editing ? `<span class="ms-chip">✏️ 수정 중</span><span>바꿀 칸(또는 제목)을 누르세요. 다 고쳤으면 「수정 끝내기」를 누르세요.</span>` : '')
+      + (n ? `<span>수정한 곳 <b style="color:var(--text)">${n}</b>개 · 인쇄·PDF·JPG에만 반영되고 다른 탭의 시간표는 그대로입니다.</span><button onclick="msResetAll()">↺ 모두 원래대로</button>` : '');
+    toggleBtn.classList.toggle('on', editing);
+    toggleBtn.textContent = editing ? '✅ 수정 끝내기' : '✏️ 시간표 수정';
+  }
+  function setEditing(on) {
+    editing = !!on && !!document.getElementById('myschedule-capture');
+    document.getElementById('myschedule-preview').classList.toggle('ms-editing', editing);
+    renderBar();
+  }
+
+  const _origRender = renderMySchedule;
+  renderMySchedule = function () { _origRender(); setEditing(editing); };
+  ['myschedule-teacher', 'myschedule-style', 'myschedule-font'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => { if (document.getElementById('myschedule-capture')) renderMySchedule(); });
+  });
+
+  // 인쇄·다운로드 전에 수정 표시(점선, 연필)를 끔
+  const _origPrint = printMySchedule, _origDown = downloadMyScheduleAs;
+  printMySchedule = function () { setEditing(false); return _origPrint.apply(this, arguments); };
+  downloadMyScheduleAs = function () { setEditing(false); return _origDown.apply(this, arguments); };
+
+  // ---------- 칸 편집 창 ----------
+  document.getElementById('myschedule-preview').addEventListener('click', ev => {
+    if (!editing) return;
+    const cell = ev.target.closest('.ms-cell, .ms-title');
+    if (!cell) return;
+    openEditor(cell);
+  });
+
+  const $ = id => document.getElementById(id);
+  function openEditor(el) {
+    const t = teacherNow(); if (!t) return;
+    if (el.classList.contains('ms-title')) {
+      target = { kind: 'title' };
+      const tmp = document.createElement('div'); tmp.innerHTML = _origBuild(t, 'classic', 'sans');
+      const e = EDITS[t] || {};
+      $('ms-m-title').textContent = '제목 수정';
+      $('ms-m-orig').textContent = '';
+      $('ms-m-l1').textContent = '제목'; $('ms-m-f1').value = e.title != null ? e.title : tmp.querySelector('h2').textContent;
+      $('ms-m-l2').textContent = '부제목'; $('ms-m-f2').value = e.sub != null ? e.sub : tmp.querySelector('#myschedule-capture > p').textContent;
+      $('ms-m-empty').style.display = 'none';
+    } else {
+      const d = el.dataset.d, p = el.dataset.p;
+      target = { kind: 'cell', d, p };
+      const orig = SCHEDULE[t]?.[d]?.[p];
+      const c = (EDITS[t]?.cells || {})[`${d}|${p}`];
+      $('ms-m-title').textContent = `${d}요일 ${p}교시 수정`;
+      $('ms-m-orig').textContent = '원래 시간표: ' + (orig ? `${toFullSubject(orig.subject)} / ${roomFullName(orig.room)}` : '빈 칸');
+      $('ms-m-l1').textContent = '과목'; $('ms-m-f1').value = c ? (c.empty ? '' : c.subject) : (orig ? toFullSubject(orig.subject) : '');
+      $('ms-m-l2').textContent = '강의실 (비워도 됩니다)'; $('ms-m-f2').value = c ? (c.empty ? '' : (c.room || '')) : (orig ? roomFullName(orig.room) : '');
+      $('ms-m-empty').style.display = '';
+    }
+    $('ms-modal').classList.add('show');
+    setTimeout(() => { $('ms-m-f1').focus(); $('ms-m-f1').select(); }, 30);
+  }
+  window.msCloseEditor = () => { $('ms-modal').classList.remove('show'); target = null; };
+
+  window.msApply = function (makeEmpty) {
+    const t = teacherNow(); if (!t || !target) return;
+    const v1 = $('ms-m-f1').value.trim(), v2 = $('ms-m-f2').value.trim();
+    const e = ed(t);
+    if (target.kind === 'title') {
+      e.title = v1; e.sub = v2;
+    } else {
+      const k = `${target.d}|${target.p}`;
+      e.cells[k] = (makeEmpty || (!v1 && !v2)) ? { empty: true } : { subject: v1, room: v2 };
+    }
+    save(); msCloseEditor(); renderMySchedule();
+  };
+  window.msReset = function () {
+    const t = teacherNow(); if (!t || !target) return;
+    const e = ed(t);
+    if (target.kind === 'title') { delete e.title; delete e.sub; }
+    else delete e.cells[`${target.d}|${target.p}`];
+    save(); msCloseEditor(); renderMySchedule();
+  };
+  window.msResetAll = function () {
+    const t = teacherNow(); if (!t) return;
+    if (!confirm(`${t} 선생님 시간표에서 수정한 ${countEdits(t)}곳을 모두 원래대로 되돌릴까요?`)) return;
+    delete EDITS[t]; save(); renderMySchedule();
+  };
+
+  ['ms-m-f1', 'ms-m-f2'].forEach(id => $(id).addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') { ev.preventDefault(); msApply(); }
+    if (ev.key === 'Escape') msCloseEditor();
+  }));
+})();
+</script>
+<!-- ===== 교사 시간표 수동 수정 기능 끝 ===== -->
 
 </body>
 </html>
